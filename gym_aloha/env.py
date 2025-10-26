@@ -64,15 +64,11 @@ class AlohaEnv(gym.Env):
         elif self.obs_type == "pixels_agent_pos":
             self.observation_space = spaces.Dict(
                 {
-                    "pixels": spaces.Dict(
-                        {
-                            "top": spaces.Box(
-                                low=0,
-                                high=255,
-                                shape=(self.observation_height, self.observation_width, 3),
-                                dtype=np.uint8,
-                            )
-                        }
+                    "top": spaces.Box(
+                        low=0,
+                        high=255,
+                        shape=(self.observation_height, self.observation_width, 3),
+                        dtype=np.uint8,
                     ),
                     "agent_pos": spaces.Box(
                         low=-1000.0,
@@ -142,7 +138,7 @@ class AlohaEnv(gym.Env):
             obs = {"top": raw_obs["images"]["top"].copy()}
         elif self.obs_type == "pixels_agent_pos":
             obs = {
-                "pixels": {"top": raw_obs["images"]["top"].copy()},
+                "top": raw_obs["images"]["top"].copy(),
                 "agent_pos": raw_obs["qpos"],
             }
         return obs
