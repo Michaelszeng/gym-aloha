@@ -81,6 +81,7 @@ class BimanualViperXTask(base.Task):
 
     @staticmethod
     def get_env_state(physics):
+        """Overwrite in task-specific subclass"""
         raise NotImplementedError
 
     def get_observation(self, physics):

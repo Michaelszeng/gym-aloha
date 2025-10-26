@@ -44,11 +44,35 @@ class AlohaEnv(gym.Env):
         self._env = self._make_env_task(self.task)
 
         if self.obs_type == "state":
-            raise NotImplementedError()
-            self.observation_space = spaces.Box(
-                low=np.array([0] * len(JOINTS)),  # ???
-                high=np.array([255] * len(JOINTS)),  # ???
-                dtype=np.float64,
+            # Determine object state size based on task
+            if self.task == "transfer_cube":
+                env_state_size = 7  # cube pose: 3 position + 4 quaternion
+            elif self.task == "insertion":
+                env_state_size = 14  # peg and socket poses: 7 + 7
+            else:
+                raise NotImplementedError(self.task)
+
+            self.observation_space = spaces.Dict(
+                {
+                    "agent_pos": spaces.Box(
+                        low=-1000.0,
+                        high=1000.0,
+                        shape=(len(JOINTS),),
+                        dtype=np.float64,
+                    ),
+                    "agent_vel": spaces.Box(
+                        low=-1000.0,
+                        high=1000.0,
+                        shape=(len(JOINTS),),
+                        dtype=np.float64,
+                    ),
+                    "env_state": spaces.Box(
+                        low=-1000.0,
+                        high=1000.0,
+                        shape=(env_state_size,),
+                        dtype=np.float64,
+                    ),
+                }
             )
         elif self.obs_type == "pixels":
             self.observation_space = spaces.Dict(
@@ -61,7 +85,7 @@ class AlohaEnv(gym.Env):
                     )
                 }
             )
-        elif self.obs_type == "pixels_agent_pos":
+        elif self.obs_type == "pixels_agent_state":
             self.observation_space = spaces.Dict(
                 {
                     "top": spaces.Box(
@@ -71,6 +95,12 @@ class AlohaEnv(gym.Env):
                         dtype=np.uint8,
                     ),
                     "agent_pos": spaces.Box(
+                        low=-1000.0,
+                        high=1000.0,
+                        shape=(len(JOINTS),),
+                        dtype=np.float64,
+                    ),
+                    "agent_vel": spaces.Box(
                         low=-1000.0,
                         high=1000.0,
                         shape=(len(JOINTS),),
@@ -133,13 +163,18 @@ class AlohaEnv(gym.Env):
 
     def _format_raw_obs(self, raw_obs):
         if self.obs_type == "state":
-            raise NotImplementedError()
+            obs = {
+                "agent_pos": raw_obs["qpos"].copy(),
+                "agent_vel": raw_obs["qvel"].copy(),
+                "env_state": raw_obs["env_state"].copy(),
+            }
         elif self.obs_type == "pixels":
             obs = {"top": raw_obs["images"]["top"].copy()}
-        elif self.obs_type == "pixels_agent_pos":
+        elif self.obs_type == "pixels_agent_state":
             obs = {
                 "top": raw_obs["images"]["top"].copy(),
-                "agent_pos": raw_obs["qpos"],
+                "agent_pos": raw_obs["qpos"].copy(),
+                "agent_vel": raw_obs["qvel"].copy(),
             }
         return obs
 
