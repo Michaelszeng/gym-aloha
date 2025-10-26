@@ -1,0 +1,5 @@
+gym-aloha
+stable-baselines3[extra]>=2.0.0
+tensorboard>=2.14.0
+torch>=2.0.0
+

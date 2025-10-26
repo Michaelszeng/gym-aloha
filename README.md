@@ -58,11 +58,18 @@ The action space consists of continuous values for each arm and gripper, resulti
 - One value for each gripper's position, normalized between 0 (closed) and 1 (open).
 
 ### Observation Space
-Observations are provided as a dictionary with the following keys:
+Observations are provided as a dictionary with the following keys, depending on `obs_type`:
 
-- `qpos` and `qvel`: Position and velocity data for the arms and grippers.
-- `images`: Camera feeds from different angles.
-- `env_state`: Additional environment state information, such as positions of the peg and sockets.
+- **`obs_type="pixels"`**: 
+  - `top`: RGB image from top camera (480x640x3)
+- **`obs_type="pixels_agent_state"`**:
+  - `top`: RGB image from top camera (480x640x3)
+  - `agent_pos`: Joint positions of both robot arms (14 dimensions)
+  - `agent_vel`: Joint velocities of both robot arms (14 dimensions)
+- **`obs_type="state"`**:
+  - `agent_pos`: Joint positions of both robot arms (14 dimensions)
+  - `agent_vel`: Joint velocities of both robot arms (14 dimensions)
+  - `env_state`: Object poses (7 dims for cube, 14 dims for peg+socket)
 
 ### Rewards
 - TransferCubeTask:
@@ -92,7 +99,7 @@ The arms and the items (block, peg, socket) start at a random position and angle
 <TimeLimit<OrderEnforcing<PassiveEnvChecker<AlohaEnv<gym_aloha/AlohaInsertion-v0>>>>>
 ```
 
-* `obs_type`: (str) The observation type. Can be either `pixels` or `pixels_agent_pos`. Default is `pixels`.
+* `obs_type`: (str) The observation type. Can be either `pixels`, `pixels_agent_state`, or `state`. Default is `pixels_agent_state`.
 
 * `render_mode`: (str) The rendering mode. Only `rgb_array` is supported for now.
 
