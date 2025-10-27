@@ -7,14 +7,16 @@ A gym environment for ALOHA
 
 ## Installation
 
-Create a virtual environment with Python 3.10 and activate it, e.g. with [`miniconda`](https://docs.anaconda.com/free/miniconda/index.html):
+Create a virtual environment:
 ```bash
-conda create -y -n aloha python=3.10 && conda activate aloha
+python -m venv env
+souce env/bin/activate
 ```
 
-Install gym-aloha:
+Install requirements:
 ```bash
-pip install gym-aloha
+pip install -r requirements.txt
+pip install -e .  # pip install modifiable gym-aloha
 ```
 
 
