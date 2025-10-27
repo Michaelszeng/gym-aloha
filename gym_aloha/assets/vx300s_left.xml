@@ -45,7 +45,7 @@
                                     <geom condim="4" solimp="2 1 0.01" solref="0.01 1" friction="1 0.005 0.0001" pos="0.005 -0.052 0" euler="3.14 1.57 0" type="mesh" mesh="vx300s_10_gripper_finger_left" name="vx300s_left/10_left_gripper_finger"/>
                                     <body name="vx300s_left/left_finger_tip" pos="0.08 -0.0225 0">
                                         <!-- simple small sphere to visualise the tip -->
-                                        <geom name="vx300s_left/left_finger_tip_geom" type="sphere" size="0.01" rgba="0 1 0 1"/>
+                                        <!-- <geom name="vx300s_left/left_finger_tip_geom" type="sphere" size="0.01" rgba="0 1 0 1"/> -->
                                     </body>
                                 </body>
                                 <body name="vx300s_left/right_finger_link" pos="0.0687 0 0">
@@ -54,7 +54,7 @@
                                     <geom condim="4" solimp="2 1 0.01" solref="0.01 1" friction="1 0.005 0.0001" pos="0.005 0.052 0" euler="3.14 1.57 0" type="mesh" mesh="vx300s_10_gripper_finger_right" name="vx300s_left/10_right_gripper_finger"/>
                                     <body name="vx300s_left/right_finger_tip" pos="0.08 0.0225 0">
                                         <!-- simple small sphere to visualise the tip -->
-                                        <geom name="vx300s_left/right_finger_tip_geom" type="sphere" size="0.01" rgba="0 1 0 1"/>
+                                        <!-- <geom name="vx300s_left/right_finger_tip_geom" type="sphere" size="0.01" rgba="0 1 0 1"/> -->
                                     </body>
                                 </body>
                             </body>
