@@ -12,7 +12,7 @@ import mujoco
 import mujoco.viewer
 
 from gym_aloha.constants import START_ARM_POSE
-from ppo.rewards import InsertionRewardShapingWrapper
+from ppo.rewards_wrappers import InsertionRewardShapingWrapper
 
 # Remove direct model creation and instead use the environment's physics
 # Create Gym environment wrapped with potential-based reward shaping

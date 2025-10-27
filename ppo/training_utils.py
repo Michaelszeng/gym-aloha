@@ -25,7 +25,7 @@ def get_training_args():
     parser.add_argument(
         "--n-envs",
         type=int,
-        default=4,
+        default=8,
         help="Number of parallel environments",
     )
     parser.add_argument(
@@ -39,19 +39,19 @@ def get_training_args():
     parser.add_argument(
         "--learning-rate",
         type=float,
-        default=3e-4,
+        default=2e-5,
         help="Learning rate",
     )
     parser.add_argument(
         "--n-steps",
         type=int,
-        default=2048,
+        default=512,
         help="Number of steps to run for each environment per update",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=64,
+        default=256,
         help="Minibatch size",
     )
     parser.add_argument(
@@ -63,7 +63,7 @@ def get_training_args():
     parser.add_argument(
         "--gamma",
         type=float,
-        default=0.99,
+        default=1.0,
         help="Discount factor",
     )
     parser.add_argument(
@@ -75,7 +75,7 @@ def get_training_args():
     parser.add_argument(
         "--clip-range",
         type=float,
-        default=0.2,
+        default=0.1,
         help="Clipping parameter for PPO",
     )
     parser.add_argument(
@@ -87,8 +87,14 @@ def get_training_args():
     parser.add_argument(
         "--vf-coef",
         type=float,
-        default=0.5,
-        help="Value function coefficient for the loss calculation",
+        default=0.6,
+        help="Value function coefficient/weight for the loss calculation",
+    )
+    parser.add_argument(
+        "--target-kl",
+        type=float,
+        default=0.03,
+        help="Target KL divergence for early stopping",
     )
     parser.add_argument(
         "--max-grad-norm",
@@ -122,12 +128,6 @@ def get_training_args():
         default=10,
         help="Number of episodes for evaluation",
     )
-    parser.add_argument(
-        "--tensorboard-port",
-        type=int,
-        default=6006,
-        help="Port for TensorBoard server",
-    )
 
     # Device
     parser.add_argument(
@@ -139,34 +139,3 @@ def get_training_args():
 
     args = parser.parse_args()
     return args
-
-
-def launch_tensorboard(log_dir, port=6006):
-    """Launch tensorboard in the background and return the process."""
-    tensorboard_dir = os.path.join(log_dir, "tensorboard")
-    os.makedirs(tensorboard_dir, exist_ok=True)
-
-    try:
-        # Try to launch tensorboard
-        process = subprocess.Popen(
-            ["tensorboard", "--logdir", tensorboard_dir, "--port", str(port), "--bind_all"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        # Wait for tensorboard to start
-        time.sleep(1)
-
-        # Check if it's still running
-        if process.poll() is None:
-            print("=" * 80)
-            print("🚀 TensorBoard started successfully!")
-            print(f"📊 View at: http://localhost:{port}")
-            print(f"📁 Logging to: {tensorboard_dir}")
-            print("=" * 80)
-            return process
-        else:
-            print(f"⚠️  TensorBoard failed to start (may already be running on port {port})")
-            return None
-    except Exception as e:
-        print(f"⚠️  Could not start TensorBoard: {e}")
-        return None

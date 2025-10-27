@@ -207,8 +207,7 @@ class AlohaEnv(gym.Env):
 
         _, reward, _, raw_obs = self._env.step(action)
 
-        # TODO(rcadene): add an enum
-        terminated = is_success = reward == 4
+        terminated = is_success = reward >= 4
 
         info = {"is_success": is_success}
 

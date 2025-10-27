@@ -23,7 +23,7 @@ class InsertionRewardShapingWrapper(gym.Wrapper):
     def __init__(
         self,
         env,
-        gamma: float,
+        gamma: float = 1.0,
         w_g_peg: float = 1.0,  # Weight for gripper -> peg
         w_g_socket: float = 1.0,  # Weight for other gripper -> socket
         w_finger_left: float = 1.0,  # Weight for distance between left fingers
@@ -32,10 +32,14 @@ class InsertionRewardShapingWrapper(gym.Wrapper):
         w_table: float = 0.25,  # Weight for desired distance from table
         w_angle: float = 1.0,  # Weight for peg/socket alignment
         k_x: float = 0.5,  # Scale x-axis error in peg-socket distance
-        c_ready_grasp_peg: float = 0.2,  # Bonus for ready grasp peg
-        c_ready_grasp_socket: float = 0.2,  # Bonus for ready grasp socket
-        c_ready_grasp_both: float = 0.2,  # Bonus for ready grasp both
-        c_grasp: float = 0.25,  # Bonus for achieving grasp
+        # c_ready_grasp_peg: float = 0.2,  # Bonus for ready grasp peg
+        # c_ready_grasp_socket: float = 0.2,  # Bonus for ready grasp socket
+        # c_ready_grasp_both: float = 0.2,  # Bonus for ready grasp both
+        # c_grasp: float = 0.25,  # Bonus for achieving grasp
+        c_ready_grasp_peg: float = 0.5,  # Bonus for ready grasp peg
+        c_ready_grasp_socket: float = 0.5,  # Bonus for ready grasp socket
+        c_ready_grasp_both: float = 0.5,  # Bonus for ready grasp both
+        c_grasp: float = 0.5,  # Bonus for achieving grasp
     ):
         super().__init__(env)
         self.gamma = gamma
@@ -52,7 +56,7 @@ class InsertionRewardShapingWrapper(gym.Wrapper):
         self.c_grasp = c_grasp
 
         # --- Hysteresis parameters for contact-based phase detection ---
-        self._contact_hysteresis_steps = 3  # consecutive frames required
+        self._contact_hysteresis_steps = 2  # consecutive frames required
         self._left_contact_count = 0
         self._right_contact_count = 0
         self.k_x = k_x
@@ -76,6 +80,8 @@ class InsertionRewardShapingWrapper(gym.Wrapper):
         original environment reward.
         """
         obs, original_reward, terminated, truncated, info = self.env.step(action)
+        info["sparse_r"] = original_reward  # Log sparse reward
+        info["potential"] = self.potential  # Log potential
 
         # Check if the peg is grasped in the new state 'obs'
         is_grasped = original_reward >= 2
@@ -91,9 +97,6 @@ class InsertionRewardShapingWrapper(gym.Wrapper):
 
         # Add the shaping reward to the original sparse reward
         total_reward = original_reward + shaping_reward
-
-        # Clip reward for stability (optional, but often good)
-        total_reward = np.clip(total_reward, -5.0, 5.0)
 
         return obs, total_reward, terminated, truncated, info
 
@@ -294,3 +297,32 @@ class InsertionRewardShapingWrapper(gym.Wrapper):
                 - self.w_angle * err_angle
             )
             return potential
+
+
+# -----------------------------------------------------------------------------
+# Generic smoothness penalty wrapper
+# -----------------------------------------------------------------------------
+
+
+class SmoothnessPenaltyWrapper(gym.Wrapper):
+    """Penalise large per-step changes in the action vector.
+
+    Reward_t = Reward_t_original - coeff * ||a_t - a_{t-1}||_2
+    """
+
+    def __init__(self, env, coeff: float = 0.1):
+        super().__init__(env)
+        self.coeff = float(coeff)
+        self._prev_action = np.zeros(self.action_space.shape, dtype=np.float32)
+
+    def reset(self, **kwargs):  # type: ignore[override]
+        obs, info = self.env.reset(**kwargs)
+        self._prev_action.fill(0.0)
+        return obs, info
+
+    def step(self, action):  # type: ignore[override]
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        penalty = -self.coeff * np.linalg.norm(action - self._prev_action)
+        reward += penalty
+        self._prev_action = action.copy()
+        return obs, reward, terminated, truncated, info

@@ -19,6 +19,12 @@ pip install -r requirements.txt
 pip install -e .  # pip install modifiable gym-aloha
 ```
 
+For Display forwarding when SSH'ed through a Windows machine (run in PowerShell):
+```bash
+$Env:DISPLAY = "localhost:0.0"
+ssh -Y -C michzeng-desktop
+```
+
 
 ## Quickstart
 

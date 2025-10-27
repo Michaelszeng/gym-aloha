@@ -1,16 +1,21 @@
 #!/bin/bash
 
 # Create log directory
-mkdir -p logs/ppo_insertion
+LOG_DIR="logs/ppo_insertion"
+
+mkdir -p $LOG_DIR
+
+pkill -f tensorboard
+tensorboard --logdir logs/ppo_insertion/tensorboard --port 6006 --bind_all &
 
 # Start training with reasonable defaults
 echo "Starting PPO training..."
 python ppo/train_ppo.py \
-    --total-timesteps 1000000 \
-    --n-envs 4 \
-    --learning-rate 3e-4 \
-    --batch-size 64 \
-    --log-dir logs/ppo_insertion \
+    --total-timesteps 10000000 \
+    --n-envs 8 \
+    --learning-rate 2e-5 \
+    --batch-size 512 \
+    --log-dir $LOG_DIR \
     --checkpoint-freq 50000 \
     --eval-freq 25000 \
     --device auto
