@@ -94,7 +94,7 @@ def train(args):
         env = gym.make(args.env_id, obs_type="state", render_mode="rgb_array")
         # NOTE: not sure if this should be used or not (usually not, but supposedly "prevents exploding")
         env = ClipActionWrapper(env)  # enforce joint limits
-        env = RateLimitActionWrapper(env, max_delta=0.5)  # prevent huge accel/vels causing Mujoco crashes
+        env = RateLimitActionWrapper(env, max_delta=0.4)  # Needed to prevent huge accel/vels causing Mujoco crashes
         return env
 
     train_env = make_vec_env(
@@ -111,16 +111,17 @@ def train(args):
         train_env, training=True, norm_obs=True, norm_reward=True, clip_obs=10.0
     )
 
-    # Create separate evaluation environment (no reward shaping for fair benchmarking)
+    # Create separate evaluation environment (with reward shaping for interpretability)
     eval_env = make_vec_env(
         env_id=make_aloha_env,  # Pass callable instead of string
         n_envs=1,
         seed=args.seed + 1000,
         vec_env_cls=SubprocVecEnv,
+        wrapper_class=partial(InsertionRewardShapingWrapperV2, gamma=0.99, max_episode_steps=MAX_EPISODE_STEPS),
         monitor_dir=None,  # Disable automatic Monitor wrapping to avoid double-wrapping
     )
     eval_monitor_file = f"{monitor_folder}/eval_monitor.csv"
-    eval_env = VecMonitor(eval_env, filename=eval_monitor_file)
+    eval_env = VecMonitor(eval_env, filename=eval_monitor_file, info_keywords=("dense_r", "is_success"))
     # Add video recorder BEFORE normalization so the outermost env remains VecNormalize
     RECORD_EVERY_N_EVS = 50
     eval_env = VecVideoRecorder(

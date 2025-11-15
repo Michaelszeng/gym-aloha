@@ -20,12 +20,12 @@ def get_training_args():
         "--total-timesteps",
         type=int,
         default=1_000_000,
-        help="Total training timesteps",
+        help="Total environment steps over all rollouts over the whole run",
     )
     parser.add_argument(
         "--n-envs",
         type=int,
-        default=8,
+        default=64,
         help="Number of parallel environments",
     )
     parser.add_argument(
@@ -46,19 +46,19 @@ def get_training_args():
         "--n-steps",
         type=int,
         default=512,
-        help="Number of steps to run for each environment per update",
+        help="Number of steps during each rollout phase",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
         default=256,
-        help="Minibatch size",
+        help="Minibatch size during optimization",
     )
     parser.add_argument(
         "--n-epochs",
         type=int,
         default=10,
-        help="Number of epochs when optimizing the surrogate loss",
+        help="Number of optimization epochs per rollout phase",
     )
     parser.add_argument(
         "--gamma",
@@ -76,13 +76,13 @@ def get_training_args():
         "--clip-range",
         type=float,
         default=0.1,
-        help="Clipping parameter for PPO",
+        help="Clipping parameter for PPO; prevents too large of a policy update/change in one step (trust region)",
     )
     parser.add_argument(
         "--ent-coef",
         type=float,
         default=0.01,
-        help="Entropy coefficient for the loss calculation",
+        help="Entropy coefficient for the loss calculation; encourages exploration",
     )
     parser.add_argument(
         "--vf-coef",
@@ -94,7 +94,7 @@ def get_training_args():
         "--target-kl",
         type=float,
         default=0.02,
-        help="Target KL divergence for early stopping",
+        help="If the KL divergence between the new and old policy is greater than this, training is stopped",
     )
     parser.add_argument(
         "--max-grad-norm",
