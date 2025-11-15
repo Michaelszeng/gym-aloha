@@ -224,7 +224,6 @@ class AlohaEnv(gym.Env):
 
     def step(self, action):
         assert action.ndim == 1
-        # TODO(rcadene): add info["is_success"] and info["success"] ?
 
         _, reward, _, raw_obs = self._env.step(action)
 
@@ -233,10 +232,9 @@ class AlohaEnv(gym.Env):
         # Terminate on success - task is complete when peg touches pin
         terminated = is_success
 
-        # Compute environment state metrics
+        # Compute environment state metrics to store in info dict
         is_grasped_left, is_grasped_right = self.detect_grasp()
         collision_force = self.compute_robot_collision_force(exclude_object_contacts=True)
-
         info = {
             "is_success": is_success,
             "env/collision_force": collision_force,
@@ -244,6 +242,7 @@ class AlohaEnv(gym.Env):
 
         observation = self._format_raw_obs(raw_obs)
 
+        # NOTE: truncated gets overwritten by TimeLimit wrapper which is automatically applied at env registration
         truncated = False
         return observation, reward, terminated, truncated, info
 

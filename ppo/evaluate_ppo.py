@@ -24,7 +24,6 @@ import gym_aloha
 from ppo.action_wrappers import ClipActionWrapper, RateLimitActionWrapper
 from ppo.rewards_wrappers import (
     InsertionRewardShapingWrapper,
-    SmoothnessPenaltyWrapper,
 )
 
 
@@ -56,7 +55,6 @@ def evaluate_policy(
         env = gym.make("gym_aloha/AlohaInsertion-v0", obs_type="state", render_mode="rgb_array")
         env = ClipActionWrapper(env)
         env = RateLimitActionWrapper(env, max_delta=0.1)
-        env = SmoothnessPenaltyWrapper(env, coeff=0.05)
 
         if plot_curves:
             # Add potential-based shaping *last* so info["potential"] is logged

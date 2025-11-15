@@ -12,7 +12,6 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 
-from gym_aloha.constants import START_ARM_POSE
 from ppo.rewards_wrappers import InsertionRewardShapingWrapperV2
 
 # Remove direct model creation and instead use the environment's physics
@@ -85,10 +84,37 @@ try:
             collision_force = aloha_env.compute_robot_collision_force(exclude_object_contacts=True)
             output_lines.append(f"Robot collision force: {collision_force:.6f}")
 
-            obs, original_reward, terminated, truncated, info = wrapped_env.step(aloha_env._env.physics.data.ctrl)
+            # Get current observation from physics state (without stepping)
+            raw_obs = aloha_env._env.task.get_observation(physics)
+            obs = aloha_env._format_raw_obs(raw_obs)
+
+            # Compute grasp state and collision force for info dict
+            is_grasped_left, is_grasped_right = aloha_env.detect_grasp()
+
+            # Check if task is successful
+            is_success = aloha_env._env.task.get_reward(physics) >= 4
+
+            # Build info dict
+            info = {
+                "is_success": is_success,
+                "env/is_grasped_left": is_grasped_left,
+                "env/is_grasped_right": is_grasped_right,
+                "env/is_grasped_both": is_grasped_left and is_grasped_right,
+                "env/collision_force": collision_force,
+            }
+
+            # Compute dense reward directly without stepping
+            dense_reward = wrapped_env._calculate_dense_reward(
+                obs, info, is_grasped_left, is_grasped_right, is_grasped_left and is_grasped_right
+            )
+
+            # Add dense reward to info
+            total_reward = dense_reward * wrapped_env.gamma
+            info["dense_r"] = dense_reward
+            info["total_reward"] = total_reward
 
             output_lines.append("")
-            output_lines.append("=== Step Info (Post-Step) ===")
+            output_lines.append("=== Viewer State (No Step) ===")
 
             # Show grasp state and success status used for rewards
             output_lines.append(

@@ -34,7 +34,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
     def __init__(
         self,
         env,
-        gamma: float = 1.0,
+        gamma: float = 0.99,
         # Collision force parameters
         robot_force_mult: float = 0.01,  # Multiplier to scale raw forces to normalized units
         robot_force_penalty_min: float = 0.5,  # Minimum force threshold (below this = no penalty)
@@ -124,6 +124,13 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
 
         obs, _, terminated, truncated, info = self.env.step(action)
 
+        # We override terminated and truncated here so that all terminations (including truncation, i.e. timeouts)
+        # are treated as true terminations and SB3 will not bootstrap the value.
+        # In other words, we treat timeouts as true failures that cannot accumulate any more rewards after the timeout.
+        if truncated and not terminated:
+            terminated = True
+            truncated = False
+
         # Increment episode step counter
         self._episode_step += 1
 
@@ -149,11 +156,12 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         Calculates the dense reward for a given observation.
 
         The reward structure:
-        - Universal: ~20 points (5 reach + 1 stillness + 1 arm resting + 5 collision + 2 grasp + 6 success bonus)
+        - Universal: ~22 points (5 reach + 2 stillness + 1 arm resting + 1 gripper Y-align +
+                                  5 collision + 2 grasp + 6 success bonus)
         - Phase 1 (Not Grasped): ~1 point (1 gripper-over-obj)
         - Phase 2 (Grasped Both): ~9 points (1 phase bonus + 5 position + 3 orientation)
 
-        Total max reward per step: ~30 points (unnormalized)
+        Total max reward per step: ~32 points (unnormalized)
         """
         reward = 0.0
 
@@ -176,6 +184,18 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
             physics.named.data.xpos["vx300s_right/left_finger_tip"].copy()
             + physics.named.data.xpos["vx300s_right/right_finger_tip"].copy()
         ) / 2
+
+        # Get gripper orientations
+        # MuJoCo quaternions are in [w, x, y, z] format, but scipy expects [x, y, z, w]
+        left_gripper_quat_mj = physics.named.data.xquat["vx300s_left/gripper_link"].copy()
+        right_gripper_quat_mj = physics.named.data.xquat["vx300s_right/gripper_link"].copy()
+        # Convert from MuJoCo [w,x,y,z] to scipy [x,y,z,w]
+        left_gripper_quat = np.array(
+            [left_gripper_quat_mj[1], left_gripper_quat_mj[2], left_gripper_quat_mj[3], left_gripper_quat_mj[0]]
+        )
+        right_gripper_quat = np.array(
+            [right_gripper_quat_mj[1], right_gripper_quat_mj[2], right_gripper_quat_mj[3], right_gripper_quat_mj[0]]
+        )
 
         # ---------------------------------------------------
         # PHASE DETECTION (passed from pre-step state)
@@ -214,13 +234,15 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         left_vel_norm = np.linalg.norm(left_gripper_vel)
         right_vel_norm = np.linalg.norm(right_gripper_vel)
 
-        # Dividing by 5 before tanh means velocities < 5 m/s receive less penalty
-        left_still_reward = 0.5 * (1 - np.tanh(left_vel_norm / 5.0))
-        right_still_reward = 0.5 * (1 - np.tanh(right_vel_norm / 5.0))
+        # Dividing by 1 before tanh means velocities < 1 m/s receive less penalty
+        left_still_reward = 1.0 * (1 - np.tanh(left_vel_norm / 1.0))
+        right_still_reward = 1.0 * (1 - np.tanh(right_vel_norm / 1.0))
         ee_still_reward = left_still_reward + right_still_reward
 
         reward += ee_still_reward
         info["ee_still_r"] = ee_still_reward
+        info["left_gripper_vel"] = left_gripper_vel
+        info["right_gripper_vel"] = right_gripper_vel
         info["left_gripper_vel_norm"] = left_vel_norm
         info["right_gripper_vel_norm"] = right_vel_norm
 
@@ -240,6 +262,31 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         reward += arm_resting_reward
         info["arm_resting_r"] = arm_resting_reward
         info["arm_to_resting_diff"] = arm_to_resting_diff
+
+        # GRIPPER Y-AXIS ALIGNMENT REWARD (max: 1.0)
+        # Encourages gripper Y-axes to align with world Y-axis for consistent orientation.
+        # This helps maintain stable grasping orientation throughout the task.
+        left_rot = Rotation.from_quat(left_gripper_quat)
+        right_rot = Rotation.from_quat(right_gripper_quat)
+        left_y_axis = left_rot.apply([0, 1, 0])
+        right_y_axis = right_rot.apply([0, 1, 0])
+        world_y_axis = np.array([0, 1, 0])
+
+        # Compute alignment errors (0 when perfectly aligned)
+        left_y_dot = np.clip(np.dot(left_y_axis, world_y_axis), -1.0, 1.0)
+        right_y_dot = np.clip(np.dot(right_y_axis, world_y_axis), -1.0, 1.0)
+        left_y_error = np.arccos(np.abs(left_y_dot))  # Use abs to allow flipped alignment
+        right_y_error = np.arccos(np.abs(right_y_dot))
+
+        # Reward for alignment (0.5 per gripper, max 1.0 total)
+        left_y_align_reward = 0.5 * (1 - np.tanh(2 * left_y_error))
+        right_y_align_reward = 0.5 * (1 - np.tanh(2 * right_y_error))
+        gripper_y_align_reward = left_y_align_reward + right_y_align_reward
+
+        reward += gripper_y_align_reward
+        info["gripper_y_align_r"] = gripper_y_align_reward
+        info["left_y_error"] = left_y_error
+        info["right_y_error"] = right_y_error
 
         # GRASP REWARD
         if is_grasped_both:
@@ -380,8 +427,11 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
             # ORIENTATION ALIGNMENT REWARD (max: 3.0)
             # Encourage aligning peg and socket x-axes for insertion
             # Note: x-axis is the length-wise axis for both peg and socket
-            peg_rot = Rotation.from_quat(peg_quat)
-            socket_rot = Rotation.from_quat(socket_quat)
+            # Convert MuJoCo [w,x,y,z] quaternions to scipy [x,y,z,w] format
+            peg_quat_scipy = np.array([peg_quat[1], peg_quat[2], peg_quat[3], peg_quat[0]])
+            socket_quat_scipy = np.array([socket_quat[1], socket_quat[2], socket_quat[3], socket_quat[0]])
+            peg_rot = Rotation.from_quat(peg_quat_scipy)
+            socket_rot = Rotation.from_quat(socket_quat_scipy)
             peg_x_axis = peg_rot.apply([1, 0, 0])
             socket_x_axis = socket_rot.apply([1, 0, 0])
 
@@ -402,7 +452,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         # NORMALIZATION
         # ---------------------------------------------------
         if self.normalize_rewards:
-            max_reward = 30.0  # Approximate maximum
+            max_reward = 32.0  # Approximate maximum
             reward = reward / max_reward
             info["max_reward_estimate"] = max_reward
 
@@ -678,8 +728,11 @@ class InsertionRewardShapingWrapper(gym.Wrapper):
 
             # Alignment of peg and socket
             # Note: x-axis is the length-wise axis for both peg and socket
-            peg_rot = Rotation.from_quat(peg_quat)
-            socket_rot = Rotation.from_quat(socket_quat)
+            # Convert MuJoCo [w,x,y,z] quaternions to scipy [x,y,z,w] format
+            peg_quat_scipy = np.array([peg_quat[1], peg_quat[2], peg_quat[3], peg_quat[0]])
+            socket_quat_scipy = np.array([socket_quat[1], socket_quat[2], socket_quat[3], socket_quat[0]])
+            peg_rot = Rotation.from_quat(peg_quat_scipy)
+            socket_rot = Rotation.from_quat(socket_quat_scipy)
             peg_x_axis = peg_rot.apply([1, 0, 0])
             socket_x_axis = socket_rot.apply([1, 0, 0])
             dot_product = np.clip(np.dot(peg_x_axis, socket_x_axis), -1.0, 1.0)
@@ -693,34 +746,3 @@ class InsertionRewardShapingWrapper(gym.Wrapper):
                 - self.w_angle * err_angle
             )
             return potential
-
-
-# -----------------------------------------------------------------------------
-# Generic smoothness penalty wrapper
-# -----------------------------------------------------------------------------
-
-
-class SmoothnessPenaltyWrapper(gym.Wrapper):
-    """Penalise large per-step changes in the action vector.
-
-    Reward_t = Reward_t_original - coeff * ||a_t - a_{t-1}||_2
-    """
-
-    def __init__(self, env, coeff: float = 0.1):
-        super().__init__(env)
-        self.coeff = float(coeff)
-        self._prev_action = np.zeros(self.action_space.shape, dtype=np.float32)
-
-    def reset(self, **kwargs):  # type: ignore[override]
-        obs, info = self.env.reset(**kwargs)
-        self._prev_action.fill(0.0)
-        return obs, info
-
-    def step(self, action):  # type: ignore[override
-        if self.coeff == 0.0:
-            return self.env.step(action)
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        penalty = -self.coeff * np.linalg.norm(action - self._prev_action)
-        reward += penalty
-        self._prev_action = action.copy()
-        return obs, reward, terminated, truncated, info

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Resume from checkpoint (leave empty to start fresh)
-RESUME_FROM="logs/ppo_insertion/PPO_2/checkpoints/ppo_aloha_10000000_steps.zip"  # e.g., "logs/ppo_insertion/PPO_2/checkpoints/ppo_aloha_10000000_steps.zip.zip"
+RESUME_FROM=""  # e.g., "logs/ppo_insertion/PPO_2/checkpoints/ppo_aloha_10000000_steps.zip"
 
 # Create log directory
 LOG_DIR="logs/ppo_insertion"
@@ -9,7 +9,8 @@ LOG_DIR="logs/ppo_insertion"
 mkdir -p $LOG_DIR
 
 pkill -f tensorboard
-tensorboard --logdir logs/ppo_insertion/tensorboard --port 6006 --bind_all &
+# Point tensorboard to the base log directory to see all runs (PPO_1, PPO_2, etc.)
+tensorboard --logdir logs/ppo_insertion --port 6006 --bind_all &
 
 # Wandb configuration
 USE_WANDB=true
@@ -25,10 +26,10 @@ fi
 python ppo/train_ppo.py \
     ${RESUME_FROM:+--resume-from $RESUME_FROM} \
     --total-timesteps 30000000 \
-    --n-envs 32 \
-    --n-steps 2048 \
-    --batch-size 8192 \
-    --n-epochs 10 \
+    --n-envs 64 \
+    --n-steps 4096 \
+    --batch-size 32768 \
+    --n-epochs 15 \
     --learning-rate 3e-4 \
     --gamma 0.99 \
     --gae-lambda 0.95 \
@@ -46,4 +47,4 @@ python ppo/train_ppo.py \
     ${WANDB_ENTITY:+--wandb-entity $WANDB_ENTITY}
 
 echo "Training complete! Check logs/ppo_insertion for results."
-echo "To view tensorboard: tensorboard --logdir logs/ppo_insertion/tensorboard"
+echo "To view tensorboard: tensorboard --logdir logs/ppo_insertion"

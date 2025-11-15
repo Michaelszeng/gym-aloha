@@ -5,12 +5,13 @@ import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
-from action_wrappers import ClipActionWrapper, RateLimitActionWrapper, TimeLimitMask
+from action_wrappers import ClipActionWrapper, RateLimitActionWrapper
 from model.feature_extractors import AlohaStateExtractor
-from rewards_wrappers import InsertionRewardShapingWrapperV2, SmoothnessPenaltyWrapper
+from rewards_wrappers import InsertionRewardShapingWrapperV2
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback, EvalCallback
 from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.logger import configure
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.utils import get_latest_run_id
@@ -91,12 +92,9 @@ def train(args):
         import gym_aloha  # noqa: F811 - Import needed in subprocess
 
         env = gym.make(args.env_id, obs_type="state", render_mode="rgb_array")
-        # Hard episode cap so SB3 knows when to stop bootstrapping
-        env = TimeLimitMask(env, max_episode_steps=MAX_EPISODE_STEPS)
         # NOTE: not sure if this should be used or not (usually not, but supposedly "prevents exploding")
         env = ClipActionWrapper(env)  # enforce joint limits
-        env = RateLimitActionWrapper(env, max_delta=0.1)  # prevent huge accel/vels causing Mujoco crashes
-        env = SmoothnessPenaltyWrapper(env, coeff=0.0)
+        env = RateLimitActionWrapper(env, max_delta=0.5)  # prevent huge accel/vels causing Mujoco crashes
         return env
 
     train_env = make_vec_env(
@@ -104,7 +102,7 @@ def train(args):
         n_envs=args.n_envs,
         seed=args.seed,
         vec_env_cls=SubprocVecEnv,
-        wrapper_class=partial(InsertionRewardShapingWrapperV2, gamma=0.95, max_episode_steps=MAX_EPISODE_STEPS),
+        wrapper_class=partial(InsertionRewardShapingWrapperV2, gamma=0.99, max_episode_steps=MAX_EPISODE_STEPS),
         monitor_dir=None,  # Disable automatic Monitor wrapping to avoid double-wrapping
     )
     train_monitor_file = f"{monitor_folder}/train_monitor.csv"
@@ -142,6 +140,10 @@ def train(args):
         net_arch=dict(pi=[256, 256], vf=[512, 512, 256]),  # Separate networks for policy and value
         activation_fn=nn.ReLU,
     )
+
+    # Create tensorboard directory with the exact structure we want
+    tensorboard_folder = f"{run_dir}/tensorboard"
+    os.makedirs(tensorboard_folder, exist_ok=True)
 
     # Create or load PPO agent
     if args.resume_from:
@@ -186,10 +188,15 @@ def train(args):
             target_kl=args.target_kl,
             max_grad_norm=args.max_grad_norm,
             policy_kwargs=policy_kwargs,
-            tensorboard_log=f"{run_dir}/tensorboard",
+            tensorboard_log=None,  # Don't pass tensorboard_log to avoid SB3's automatic subdirectory creation
             device=args.device,
             verbose=1,
         )
+
+        # Manually configure the logger to write to our exact directory structure
+        # This bypasses SB3's automatic PPO_X subdirectory creation
+        new_logger = configure(tensorboard_folder, ["stdout", "csv", "tensorboard"])
+        model.set_logger(new_logger)
 
     # Setup callbacks
     checkpoint_folder = f"{run_dir}/checkpoints"
