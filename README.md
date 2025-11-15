@@ -79,7 +79,7 @@ Observations are provided as a dictionary with the following keys, depending on 
   - `agent_vel`: Joint velocities of both robot arms (14 dimensions)
   - `env_state`: Object poses (7 dims for cube, 14 dims for peg+socket)
 
-### Rewards
+### Pre-built Rewards
 - TransferCubeTask:
     - 1 point for holding the box with the right gripper.
     - 2 points if the box is lifted with the right gripper.

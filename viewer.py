@@ -10,19 +10,21 @@ import time
 import gymnasium as gym
 import mujoco
 import mujoco.viewer
+import numpy as np
 
 from gym_aloha.constants import START_ARM_POSE
-from ppo.rewards_wrappers import InsertionRewardShapingWrapper
+from ppo.rewards_wrappers import InsertionRewardShapingWrapperV2
 
 # Remove direct model creation and instead use the environment's physics
-# Create Gym environment wrapped with potential-based reward shaping
+# Create Gym environment wrapped with dense reward shaping
 base_env = gym.make("gym_aloha/AlohaInsertion-v0", obs_type="state", render_mode="rgb_array")
-wrapped_env = InsertionRewardShapingWrapper(base_env, gamma=0.95)
+wrapped_env = InsertionRewardShapingWrapperV2(base_env, gamma=0.95)
 
 aloha_env = wrapped_env.unwrapped  # stripped of InsertionRewardShapingWrapper wrappers
 
 # Reset to get initial state and establish physics handle
-obs, _ = wrapped_env.reset()
+obs, info = wrapped_env.reset()
+print(f"initial info: {info}")
 
 # Access dm_control Physics object used internally by the environment
 physics = aloha_env._env.physics
@@ -61,30 +63,59 @@ viewer = mujoco.viewer.launch_passive(model, data)
 
 step_count = 0
 last_print_time = time.time()
+num_lines_printed = 0
 try:
     while viewer.is_running():
         # Step forward the viewer's model
         mujoco.mj_step(model, data)
 
-        # Push the new joint state into dm_control’s Physics
+        # Push the new joint state into dm_control's Physics
         sync_viewer_to_dm()
-
-        # We don't advance dynamics; this is a static pose inspector. If you want gravity etc. uncomment:
-        # aloha_env._env.physics.step()
 
         # Compute potential periodically
         if time.time() - last_print_time > 0.1:
-            raw_obs = aloha_env._env.task.get_observation(aloha_env._env.physics)
-            formatted_obs = aloha_env._format_raw_obs(raw_obs)
-            sparse_reward = aloha_env._env.task.get_reward(aloha_env._env.physics)
-            is_grasped = sparse_reward >= 2
-            potential = wrapped_env._calculate_potential(formatted_obs, is_grasped)
-            phase = wrapped_env._update_phase(formatted_obs)
-            print(
-                f"potential={potential:+.3f}   phase={phase.name}   sparse_reward={sparse_reward}   step={step_count}",
-                end="\r",
-                flush=True,
+            # Debug: print contact and force info
+            physics = aloha_env._env.physics
+
+            # Build output buffer
+            output_lines = []
+            output_lines.append("")
+
+            # Show collision force
+            collision_force = aloha_env.compute_robot_collision_force(exclude_object_contacts=True)
+            output_lines.append(f"Robot collision force: {collision_force:.6f}")
+
+            obs, original_reward, terminated, truncated, info = wrapped_env.step(aloha_env._env.physics.data.ctrl)
+
+            output_lines.append("")
+            output_lines.append("=== Step Info (Post-Step) ===")
+
+            # Show grasp state and success status used for rewards
+            output_lines.append(
+                f"Grasped (used for rewards): L={info['is_grasped_left']}, R={info['is_grasped_right']}"
             )
+            output_lines.append("")
+
+            # Show all other info
+            fields_to_skip = ["raw_collision_force"]
+            for key, value in info.items():
+                if key in fields_to_skip:
+                    continue
+                if isinstance(value, float):
+                    output_lines.append(f"{key:30s}: {value:+.4f}")
+                else:
+                    output_lines.append(f"{key:30s}: {value}")
+            output_lines.append("=" * 50)
+
+            # Move cursor up if we've printed before
+            if num_lines_printed > 0:
+                print(f"\033[{num_lines_printed}A", end="")
+
+            # Print all lines with line clearing
+            for line in output_lines:
+                print(f"\033[K{line}")
+
+            num_lines_printed = len(output_lines)
             last_print_time = time.time()
 
         viewer.sync()

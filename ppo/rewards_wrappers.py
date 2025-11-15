@@ -4,6 +4,8 @@ import gymnasium as gym
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+from gym_aloha.constants import START_ARM_POSE
+
 
 class InsertionPhase(Enum):
     PRE_GRASP = 0
@@ -13,6 +15,398 @@ class InsertionPhase(Enum):
     # GRASPED_PEG = 4
     # GRASPED_SOCKET = 5
     GRASPED_BOTH = 6
+
+
+class InsertionRewardShapingWrapperV2(gym.Wrapper):
+    """
+    Dense reward shaping wrapper for the dual-arm peg insertion task.
+
+    Reward structure guides the robot through these phases:
+    1. Reach toward both objects (peg with right gripper, socket with left gripper)
+    2. Grasp both objects
+    3. Align peg with socket (position and orientation)
+    4. Insert peg into socket
+    5. Success - maintain successful insertion
+
+    Unlike potential-based shaping, this uses direct dense rewards at each timestep.
+    """
+
+    def __init__(
+        self,
+        env,
+        gamma: float = 1.0,
+        # Collision force parameters
+        robot_force_mult: float = 0.01,  # Multiplier to scale raw forces to normalized units
+        robot_force_penalty_min: float = 0.5,  # Minimum force threshold (below this = no penalty)
+        robot_cumulative_force_limit: float = 1000.0,  # Max cumulative force before penalty
+        # Phase thresholds
+        insertion_threshold: float = 0.05,  # Distance to start insertion phase
+        gripper_over_obj_threshold: float = 0.2,  # Max XY distance to receive gripper-over-object reward
+        # Episode configuration
+        max_episode_steps: int = 500,  # Maximum steps per episode for success reward calculation
+        # Reward scaling
+        normalize_rewards: bool = False,  # Whether to normalize to [0, 1]
+    ):
+        super().__init__(env)
+        self.gamma = gamma
+
+        # Collision force parameters
+        self.robot_force_mult = robot_force_mult
+        self.robot_force_penalty_min = robot_force_penalty_min
+        self.robot_cumulative_force_limit = robot_cumulative_force_limit
+
+        # Thresholds
+        self.insertion_threshold = insertion_threshold
+        self.gripper_over_obj_threshold = gripper_over_obj_threshold
+        self.normalize_rewards = normalize_rewards
+
+        # Episode tracking
+        self.max_episode_steps = max_episode_steps
+        self._episode_step = 0
+
+        # Contact tracking for grasp detection (with asymmetric bidirectional hysteresis)
+        self._contact_hysteresis_grasp = 2  # Steps to transition from no grasp -> grasp
+        self._contact_hysteresis_release = 3  # Steps to transition from grasp -> no grasp
+        self._left_contact_count = 0
+        self._right_contact_count = 0
+        self._left_grasped_stable = False  # Stable grasp state with hysteresis
+        self._right_grasped_stable = False
+
+        # Cumulative collision force tracking
+        self._cumulative_collision_force = 0.0
+
+    def reset(self, **kwargs):
+        """Resets the environment and contact tracking."""
+        obs, info = self.env.reset(**kwargs)
+        self._left_contact_count = 0
+        self._right_contact_count = 0
+        self._left_grasped_stable = False
+        self._right_grasped_stable = False
+        self._cumulative_collision_force = 0.0
+        self._episode_step = 0
+        return obs, info
+
+    def _detect_grasp_both_with_hysteresis(self) -> tuple[bool, bool, bool]:
+        """
+        Detect grasps with asymmetric bidirectional hysteresis to avoid flickering.
+
+        Requires self._contact_hysteresis_grasp consecutive contacts to transition to grasped state,
+        but self._contact_hysteresis_release consecutive non-contacts to transition back to not grasped.
+        """
+        left_now, right_now = self.env.unwrapped.detect_grasp()
+
+        # Update counters: +1 if contact detected, -1 if not (clamped to [0, release_threshold])
+        self._left_contact_count = max(
+            0, min(self._contact_hysteresis_release, self._left_contact_count + (1 if left_now else -1))
+        )
+        self._right_contact_count = max(
+            0, min(self._contact_hysteresis_release, self._right_contact_count + (1 if right_now else -1))
+        )
+
+        # Update stable state:
+        # - Transition to grasped when counter >= grasp threshold
+        # - Transition to not grasped when counter = 0
+        self._left_grasped_stable = self._left_contact_count >= self._contact_hysteresis_grasp
+        self._right_grasped_stable = self._right_contact_count >= self._contact_hysteresis_grasp
+
+        return (
+            self._left_grasped_stable,
+            self._right_grasped_stable,
+            self._left_grasped_stable and self._right_grasped_stable,
+        )
+
+    def step(self, action):
+        """
+        Takes a step, calculates dense reward, and adds it to the original environment reward.
+        """
+        # Detect grasps BEFORE stepping (more stable than post-step detection)
+        is_grasped_left_pre, is_grasped_right_pre, is_grasped_both_pre = self._detect_grasp_both_with_hysteresis()
+
+        obs, _, terminated, truncated, info = self.env.step(action)
+
+        # Increment episode step counter
+        self._episode_step += 1
+
+        # Calculate dense reward using pre-step grasp state
+        dense_reward = self._calculate_dense_reward(
+            obs, info, is_grasped_left_pre, is_grasped_right_pre, is_grasped_both_pre
+        )
+        info["dense_r"] = dense_reward  # Log dense reward
+
+        total_reward = dense_reward * self.gamma
+
+        return obs, total_reward, terminated, truncated, info
+
+    def _calculate_dense_reward(
+        self,
+        obs: dict,
+        info: dict,
+        is_grasped_left: bool,
+        is_grasped_right: bool,
+        is_grasped_both: bool,
+    ) -> float:
+        """
+        Calculates the dense reward for a given observation.
+
+        The reward structure:
+        - Universal: ~20 points (5 reach + 1 stillness + 1 arm resting + 5 collision + 2 grasp + 6 success bonus)
+        - Phase 1 (Not Grasped): ~1 point (1 gripper-over-obj)
+        - Phase 2 (Grasped Both): ~9 points (1 phase bonus + 5 position + 3 orientation)
+
+        Total max reward per step: ~30 points (unnormalized)
+        """
+        reward = 0.0
+
+        # Access physics for detailed state information
+        physics = self.env.unwrapped._env.physics
+
+        # Extract object positions and orientations from observation
+        current_qpos = obs["agent_pos"]  # Shape: (14,) - all joint positions
+        peg_pos = obs["env_state"][0:3]
+        peg_quat = obs["env_state"][3:7]
+        socket_pos = obs["env_state"][7:10]
+        socket_quat = obs["env_state"][10:14]
+
+        # Get gripper positions (average of finger tips)
+        left_finger_avg_pos = (
+            physics.named.data.xpos["vx300s_left/left_finger_tip"].copy()
+            + physics.named.data.xpos["vx300s_left/right_finger_tip"].copy()
+        ) / 2
+        right_finger_avg_pos = (
+            physics.named.data.xpos["vx300s_right/left_finger_tip"].copy()
+            + physics.named.data.xpos["vx300s_right/right_finger_tip"].copy()
+        ) / 2
+
+        # ---------------------------------------------------
+        # PHASE DETECTION (passed from pre-step state)
+        # ---------------------------------------------------
+        is_success = info.get("is_success", False)
+
+        # Log phase information (with hysteresis applied, from pre-step)
+        info["is_grasped_left"] = is_grasped_left
+        info["is_grasped_right"] = is_grasped_right
+        info["is_grasped_both"] = is_grasped_both
+
+        # ---------------------------------------------------
+        # UNIVERSAL REWARDS (applied in all phases)
+        # ---------------------------------------------------
+
+        # REACHING REWARDS (max: 5.0)
+        # Guide grippers toward their respective objects
+        dist_right_to_peg = np.linalg.norm(right_finger_avg_pos - peg_pos)
+        dist_left_to_socket = np.linalg.norm(left_finger_avg_pos - socket_pos)
+
+        reach_peg_reward = 2.5 * (1 - np.tanh(3 * dist_right_to_peg))
+        reach_socket_reward = 2.5 * (1 - np.tanh(3 * dist_left_to_socket))
+        reward += reach_peg_reward + reach_socket_reward
+
+        info["reach_peg_r"] = reach_peg_reward
+        info["reach_socket_r"] = reach_socket_reward
+        info["dist_right_to_peg"] = dist_right_to_peg
+        info["dist_left_to_socket"] = dist_left_to_socket
+
+        # END-EFFECTOR STILLNESS REWARD (max: 1.0)
+        # Penalizes excessive end-effector velocity to encourage smooth, controlled motion.
+        # Get gripper body velocities (linear velocity)
+        # cvel returns [angular_vel (3), linear_vel (3)], so we take indices 3:6
+        left_gripper_vel = physics.named.data.cvel["vx300s_left/gripper_link"][3:6].copy()
+        right_gripper_vel = physics.named.data.cvel["vx300s_right/gripper_link"][3:6].copy()
+        left_vel_norm = np.linalg.norm(left_gripper_vel)
+        right_vel_norm = np.linalg.norm(right_gripper_vel)
+
+        # Dividing by 5 before tanh means velocities < 5 m/s receive less penalty
+        left_still_reward = 0.5 * (1 - np.tanh(left_vel_norm / 5.0))
+        right_still_reward = 0.5 * (1 - np.tanh(right_vel_norm / 5.0))
+        ee_still_reward = left_still_reward + right_still_reward
+
+        reward += ee_still_reward
+        info["ee_still_r"] = ee_still_reward
+        info["left_gripper_vel_norm"] = left_vel_norm
+        info["right_gripper_vel_norm"] = right_vel_norm
+
+        # ARM RESTING ORIENTATION REWARD (max: 1.0)
+        # Encourages arm joints (excluding grippers) to stay near resting configuration.
+        # This helps the robot maintain a canonical pose for consistency across episodes.
+        # Extract arm joints only (exclude grippers at indices 6-7 and 13-14)
+        # Left arm: indices 0-5, Right arm: indices 7-12 (after removing left gripper)
+        left_arm_qpos = current_qpos[0:6]
+        right_arm_qpos = current_qpos[7:13]
+        current_arm_qpos = np.concatenate([left_arm_qpos, right_arm_qpos])
+        # Get resting arm positions (exclude grippers)
+        resting_arm_qpos = np.array(START_ARM_POSE)[np.array([0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13])]
+        arm_to_resting_diff = np.linalg.norm(current_arm_qpos - resting_arm_qpos)
+        # Dividing by 5 provides gentle shaping - allows some deviation while encouraging rest pose
+        arm_resting_reward = 1.0 * (1 - np.tanh(arm_to_resting_diff / 5.0))
+        reward += arm_resting_reward
+        info["arm_resting_r"] = arm_resting_reward
+        info["arm_to_resting_diff"] = arm_to_resting_diff
+
+        # GRASP REWARD
+        if is_grasped_both:
+            grasp_reward = 2.0
+            reward += grasp_reward
+            info["grasp_r"] = grasp_reward
+
+        # SUCCESS REWARD remaining_steps * current_step_reward (at success)
+        if is_success:
+            reward += 6.0  # success bonus
+            remaining_steps = max(0, self.max_episode_steps - self._episode_step)
+            success_reward = remaining_steps * reward  # reward here is the dense reward so far
+        else:
+            success_reward = 0.0
+
+        reward += success_reward
+        info["success_r"] = success_reward
+        info["episode_step"] = self._episode_step
+        info["remaining_steps"] = max(0, self.max_episode_steps - self._episode_step)
+
+        # ---------------------------------------------------
+        # COLLISION PENALTIES
+        # ---------------------------------------------------
+
+        # Get raw collision force from environment (computed in step)
+        raw_collision_force = info["env/collision_force"]
+        info["raw_collision_force"] = raw_collision_force
+
+        # STEP COLLISION PENALTY (max: ~3.0, min: ~0.0)
+        # Penalizes contact forces at each timestep to discourage collisions.
+        # - robot_force_mult scales raw forces to normalized units
+        # - Forces below robot_force_penalty_min are not penalized (clamp)
+        # - The outer multiplier of 3 and inner multiplier of 3 create strong
+        #   penalty for collisions while allowing light contact
+        # Returns ~3 when no collision, ~0 when high collision forces
+        scaled_force = self.robot_force_mult * raw_collision_force
+        clamped_force = np.maximum(scaled_force - self.robot_force_penalty_min, 0.0)
+        step_no_collision_reward = 3.0 * (1 - np.tanh(3 * clamped_force))
+        reward += step_no_collision_reward
+        info["step_no_collision_r"] = step_no_collision_reward
+        info["scaled_collision_force"] = scaled_force
+
+        # Update cumulative collision force
+        self._cumulative_collision_force += raw_collision_force
+        info["cumulative_collision_force"] = self._cumulative_collision_force
+
+        # CUMULATIVE COLLISION THRESHOLD REWARD (max: 2.0, min: 0.0)
+        # Binary reward for keeping total accumulated collision force below threshold.
+        # If cumulative force exceeds limit, this reward becomes 0 for rest of episode.
+        # Encourages collision-free trajectories throughout the entire task.
+        cumulative_under_threshold = float(self._cumulative_collision_force < self.robot_cumulative_force_limit)
+        cumulative_collision_reward = 2.0 * cumulative_under_threshold
+        reward += cumulative_collision_reward
+        info["cumulative_collision_r"] = cumulative_collision_reward
+
+        # ---------------------------------------------------
+        # PHASE 1: NOT GRASPED BOTH (Reaching and Grasping)
+        # Max total: ~12 points (6 reach + 2 gripper-over-obj + 4 grasp progress)
+        # ---------------------------------------------------
+        if not is_grasped_both:
+            not_grasped_reward = 0.0
+
+            # GRIPPER OVER OBJECT REWARDS (max: 1.0)
+            # Encourage gripper to align with object in xy-plane (top-down view).
+            # This helps ensure proper grasp orientation before descending.
+            # Uses only xy coordinates to check horizontal alignment.
+            # Only rewards if gripper is within threshold distance (otherwise reward = 0)
+            # Distances < 0.02m receive maximum reward (0.5), then decay smoothly
+            right_over_peg_dist = np.linalg.norm(right_finger_avg_pos[:2] - peg_pos[:2])
+            left_over_socket_dist = np.linalg.norm(left_finger_avg_pos[:2] - socket_pos[:2])
+
+            # Only give reward if within threshold distance
+            # Clamp distance to 0 if < 0.03m for max reward
+            if right_over_peg_dist < self.gripper_over_obj_threshold:
+                adjusted_right_dist = max(0, right_over_peg_dist - 0.03)
+                right_over_peg_reward = 0.5 * (1 - np.tanh(5 * adjusted_right_dist))
+            else:
+                right_over_peg_reward = 0.0
+
+            if left_over_socket_dist < self.gripper_over_obj_threshold:
+                adjusted_left_dist = max(0, left_over_socket_dist - 0.03)
+                left_over_socket_reward = 0.5 * (1 - np.tanh(5 * adjusted_left_dist))
+            else:
+                left_over_socket_reward = 0.0
+
+            not_grasped_reward += right_over_peg_reward + left_over_socket_reward
+
+            info["right_over_peg_r"] = right_over_peg_reward
+            info["left_over_socket_r"] = left_over_socket_reward
+            info["right_over_peg_dist"] = right_over_peg_dist
+            info["left_over_socket_dist"] = left_over_socket_dist
+
+            reward += not_grasped_reward
+            info["phase"] = "not_grasped"
+            info["not_grasped_r"] = not_grasped_reward
+
+        # ---------------------------------------------------
+        # PHASE 2: GRASPED BOTH (Alignment and Insertion)
+        # Additional: ~15 points
+        # ---------------------------------------------------
+        else:
+            grasped_reward = 0.0
+
+            # PHASE TRANSITION BONUS (+1.0)
+            # Adds constant to grasped phase to match max reward from not_grasped phase.
+            # This ensures reward monotonically increases as task progresses,
+            # preventing reward drops when transitioning between phases.
+            grasped_reward += 1.0
+
+            # Calculate peg-socket alignment metrics
+            peg_socket_diff = peg_pos - socket_pos
+
+            # Weighted distance: penalize YZ misalignment more than X
+            # This encourages vertical alignment before X-axis approach
+            x_weight = 0.3  # Lower weight for X distance
+            yz_weight = 1.0  # Higher weight for YZ distance
+            weighted_diff = peg_socket_diff.copy()
+            weighted_diff[0] *= x_weight  # Scale X component down
+            weighted_diff[1] *= yz_weight  # Y component
+            weighted_diff[2] *= yz_weight  # Z component
+            peg_socket_weighted_dist = np.linalg.norm(weighted_diff)
+
+            # Also compute unweighted distance for logging
+            peg_socket_dist = np.linalg.norm(peg_socket_diff)
+            peg_socket_xy_dist = np.linalg.norm(peg_socket_diff[:2])
+            peg_socket_z_dist = np.abs(peg_socket_diff[2])
+
+            # POSITION ALIGNMENT REWARD (max: 5.0)
+            # Encourage bringing peg and socket close together (prioritizing YZ alignment)
+            align_pos_reward = 5.0 * (1 - np.tanh(3 * peg_socket_weighted_dist))
+            grasped_reward += align_pos_reward
+            info["align_pos_r"] = align_pos_reward
+            info["peg_socket_dist"] = peg_socket_dist
+            info["peg_socket_weighted_dist"] = peg_socket_weighted_dist
+            info["peg_socket_xy_dist"] = peg_socket_xy_dist
+            info["peg_socket_z_dist"] = peg_socket_z_dist
+
+            # ORIENTATION ALIGNMENT REWARD (max: 3.0)
+            # Encourage aligning peg and socket x-axes for insertion
+            # Note: x-axis is the length-wise axis for both peg and socket
+            peg_rot = Rotation.from_quat(peg_quat)
+            socket_rot = Rotation.from_quat(socket_quat)
+            peg_x_axis = peg_rot.apply([1, 0, 0])
+            socket_x_axis = socket_rot.apply([1, 0, 0])
+
+            # Compute alignment error (want parallel or anti-parallel)
+            dot_product = np.clip(np.dot(peg_x_axis, socket_x_axis), -1.0, 1.0)
+            alignment_error = np.arccos(np.abs(dot_product))  # 0 when aligned
+
+            align_orient_reward = 3.0 * (1 - np.tanh(2 * alignment_error))
+            grasped_reward += align_orient_reward
+            info["align_orient_r"] = align_orient_reward
+            info["alignment_error"] = alignment_error
+
+            reward += grasped_reward
+            info["phase"] = "grasped_both"
+            info["grasped_r"] = grasped_reward
+
+        # ---------------------------------------------------
+        # NORMALIZATION
+        # ---------------------------------------------------
+        if self.normalize_rewards:
+            max_reward = 30.0  # Approximate maximum
+            reward = reward / max_reward
+            info["max_reward_estimate"] = max_reward
+
+        return reward
 
 
 class InsertionRewardShapingWrapper(gym.Wrapper):
@@ -26,8 +420,8 @@ class InsertionRewardShapingWrapper(gym.Wrapper):
         gamma: float = 1.0,
         w_g_peg: float = 1.0,  # Weight for gripper -> peg
         w_g_socket: float = 1.0,  # Weight for other gripper -> socket
-        w_finger_left: float = 1.0,  # Weight for distance between left fingers
-        w_finger_right: float = 1.0,  # Weight for distance between right fingers
+        w_finger_left: float = 0.01,  # Weight for distance between left fingers
+        w_finger_right: float = 0.01,  # Weight for distance between right fingers
         w_peg_sock: float = 1.0,  # Weight for peg -> socket
         w_table: float = 0.25,  # Weight for desired distance from table
         w_angle: float = 1.0,  # Weight for peg/socket alignment
@@ -80,7 +474,6 @@ class InsertionRewardShapingWrapper(gym.Wrapper):
         original environment reward.
         """
         obs, original_reward, terminated, truncated, info = self.env.step(action)
-        info["sparse_r"] = original_reward  # Log sparse reward
         info["potential"] = self.potential  # Log potential
 
         # Check if the peg is grasped in the new state 'obs'
@@ -282,12 +675,13 @@ class InsertionRewardShapingWrapper(gym.Wrapper):
             dist_peg_socket = np.linalg.norm(diff)
 
             # Alignment of peg and socket
+            # Note: x-axis is the length-wise axis for both peg and socket
             peg_rot = Rotation.from_quat(peg_quat)
             socket_rot = Rotation.from_quat(socket_quat)
-            peg_z_axis = peg_rot.apply([0, 0, 1])
-            socket_z_axis = socket_rot.apply([0, 0, 1])
-            dot_product = np.dot(peg_z_axis, socket_z_axis)
-            err_angle = np.arccos(dot_product)
+            peg_x_axis = peg_rot.apply([1, 0, 0])
+            socket_x_axis = socket_rot.apply([1, 0, 0])
+            dot_product = np.clip(np.dot(peg_x_axis, socket_x_axis), -1.0, 1.0)
+            err_angle = np.arccos(np.abs(dot_product))  # Use abs for parallel or anti-parallel
 
             potential = (
                 self.c_grasp  # grasp bonus
@@ -320,7 +714,9 @@ class SmoothnessPenaltyWrapper(gym.Wrapper):
         self._prev_action.fill(0.0)
         return obs, info
 
-    def step(self, action):  # type: ignore[override]
+    def step(self, action):  # type: ignore[override
+        if self.coeff == 0.0:
+            return self.env.step(action)
         obs, reward, terminated, truncated, info = self.env.step(action)
         penalty = -self.coeff * np.linalg.norm(action - self._prev_action)
         reward += penalty

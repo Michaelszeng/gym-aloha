@@ -87,13 +87,13 @@ def get_training_args():
     parser.add_argument(
         "--vf-coef",
         type=float,
-        default=0.6,
+        default=1.0,
         help="Value function coefficient/weight for the loss calculation",
     )
     parser.add_argument(
         "--target-kl",
         type=float,
-        default=0.03,
+        default=0.02,
         help="Target KL divergence for early stopping",
     )
     parser.add_argument(

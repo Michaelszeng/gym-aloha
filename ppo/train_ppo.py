@@ -1,17 +1,3 @@
-"""
-PPO Training Script for ALOHA Tasks with State Observations
-
-This script trains a PPO policy using state observations (agent positions + object poses)
-instead of images. This is more sample-efficient than vision-based learning.
-
-The state observation includes:
-- agent_pos: joint positions of both robot arms (14 dimensions)
-- env_state: object poses (7 dims for cube, 14 dims for peg+socket)
-
-Usage:
-    python train_ppo.py --total-timesteps 1000000 --log-dir logs/ppo_insertion
-"""
-
 import os
 from functools import partial
 
@@ -19,10 +5,9 @@ import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
-from action_wrappers import ClipActionWrapper, RateLimitActionWrapper
-from gymnasium.wrappers import TimeLimit
+from action_wrappers import ClipActionWrapper, RateLimitActionWrapper, TimeLimitMask
 from model.feature_extractors import AlohaStateExtractor
-from rewards_wrappers import InsertionRewardShapingWrapper, SmoothnessPenaltyWrapper
+from rewards_wrappers import InsertionRewardShapingWrapperV2, SmoothnessPenaltyWrapper
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback, EvalCallback
 from stable_baselines3.common.env_util import make_vec_env
@@ -30,14 +15,10 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.utils import get_latest_run_id
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, VecNormalize
-
-# Local utilities
 from training_utils import get_training_args
 
-import gym_aloha  # Register custom environments
+import gym_aloha
 from ppo.logging_utils import InfoStatsCallback
-
-# Local quiet video recorder
 from ppo.quiet_video_recorder import QuietVecVideoRecorder as VecVideoRecorder
 
 
@@ -77,9 +58,11 @@ def train(args):
         import gym_aloha  # noqa: F811 - Import needed in subprocess
 
         env = gym.make(args.env_id, obs_type="state", render_mode="rgb_array")
+        env = TimeLimitMask(env, max_episode_steps=500)  # Hard episode cap so SB3 knows when to stop bootstrapping
+        # NOTE: not sure if this should be used or not (usually not, but supposedly "prevents exploding")
         env = ClipActionWrapper(env)  # enforce joint limits
         env = RateLimitActionWrapper(env, max_delta=0.1)  # prevent huge accel/vels causing Mujoco crashes
-        env = SmoothnessPenaltyWrapper(env, coeff=0.05)
+        env = SmoothnessPenaltyWrapper(env, coeff=0.0)
         return env
 
     train_env = make_vec_env(
@@ -87,7 +70,7 @@ def train(args):
         n_envs=args.n_envs,
         seed=args.seed,
         vec_env_cls=SubprocVecEnv,
-        wrapper_class=partial(InsertionRewardShapingWrapper, gamma=1.0),
+        wrapper_class=partial(InsertionRewardShapingWrapperV2, gamma=0.95, max_episode_steps=500),
     )
     monitor_file = f"{monitor_folder}/train_monitor.csv"
     train_env = VecMonitor(train_env, filename=monitor_file, info_keywords=("sparse_r", "potential"))
@@ -103,7 +86,7 @@ def train(args):
         vec_env_cls=SubprocVecEnv,
     )
     monitor_file = f"{monitor_folder}/eval_monitor.csv"
-    eval_env = VecMonitor(eval_env, filename=monitor_file, info_keywords=("sparse_r"))
+    eval_env = VecMonitor(eval_env, filename=monitor_file)
     # Add video recorder BEFORE normalization so the outermost env remains VecNormalize
     EPISODE_LEN = eval_env.get_attr("_max_episode_steps")[0]
     RECORD_EVERY_N_EVS = 50

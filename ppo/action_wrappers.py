@@ -3,6 +3,39 @@ import numpy as np
 
 from gym_aloha.constants import ACTIONS
 
+# ---------------------------------------------------------------------------
+# Time-limit masking wrapper (prevents value bootstrap bias on truncation)
+# ---------------------------------------------------------------------------
+
+
+class TimeLimitMask(gym.Wrapper):
+    """Marks truncations caused by hitting the episode step limit.
+
+    Stable-Baselines3 will NOT bootstrap the value if the info dict contains
+    ``{"TimeLimit.truncated": True}``.  This avoids critic bias from fake
+    terminations when the environment simply times out.
+    """
+
+    def __init__(self, env: gym.Env, max_episode_steps: int = 500):
+        super().__init__(env)
+        self.max_episode_steps = int(max_episode_steps)
+        self.elapsed_steps = 0
+
+    def reset(self, **kwargs):  # type: ignore[override]
+        self.elapsed_steps = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, action):  # type: ignore[override]
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self.elapsed_steps += 1
+
+        if self.elapsed_steps >= self.max_episode_steps:
+            # Convert hard time-limit into truncation flag that SB3 understands
+            truncated = True
+            info["TimeLimit.truncated"] = True
+
+        return obs, reward, terminated, truncated, info
+
 
 class ClipActionWrapper(gym.ActionWrapper):
     """Clip actions to the true joint limits specified in the XML.
@@ -56,7 +89,8 @@ class ClipActionWrapper(gym.ActionWrapper):
     # gym.ActionWrapper API
     # ------------------------------------------------------------------
     def action(self, act):  # noqa: D401 – short signature required by Gym
-        return np.clip(act, self.low, self.high)
+        # return np.clip(act, self.low, self.high)
+        return act
 
 
 class RateLimitActionWrapper(gym.ActionWrapper):

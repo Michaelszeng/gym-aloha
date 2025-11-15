@@ -13,7 +13,7 @@ echo "Starting PPO training..."
 python ppo/train_ppo.py \
     --total-timesteps 10000000 \
     --n-envs 8 \
-    --learning-rate 2e-5 \
+    --learning-rate 5e-6 \
     --batch-size 512 \
     --log-dir $LOG_DIR \
     --checkpoint-freq 50000 \
