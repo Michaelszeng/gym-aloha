@@ -16,8 +16,11 @@ export NUMEXPR_NUM_THREADS=1
 export VECLIB_MAXIMUM_THREADS=1
 
 # Suppress TensorFlow/PyTorch warnings
-export TF_CPP_MIN_LOG_LEVEL=2
+export TF_CPP_MIN_LOG_LEVEL=3  # Suppress all TF logs including errors
 export PYTHONWARNINGS="ignore::FutureWarning"
+export XLA_FLAGS="--xla_gpu_cuda_data_dir=/usr/local/cuda"
+# Redirect stderr for subprocesses to suppress XLA warnings
+export MUJOCO_GL=egl  # Use EGL for headless rendering (fixes GLFW/X11 warning)
 
 
 # Resume from checkpoint (leave empty to start fresh)
