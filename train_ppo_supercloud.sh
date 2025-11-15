@@ -7,6 +7,18 @@ source /etc/profile
 module load anaconda/Python-ML-2025a
 wandb offline
 
+# Limit threading to avoid hitting RLIMIT_NPROC
+# Each parallel env spawns processes with threads, so we need to be conservative
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+export VECLIB_MAXIMUM_THREADS=1
+
+# Suppress TensorFlow/PyTorch warnings
+export TF_CPP_MIN_LOG_LEVEL=2
+export PYTHONWARNINGS="ignore::FutureWarning"
+
 
 # Resume from checkpoint (leave empty to start fresh)
 RESUME_FROM=""  # e.g., "logs/ppo_insertion/PPO_2/checkpoints/ppo_aloha_10000000_steps.zip"
@@ -34,9 +46,9 @@ fi
 python ppo/train_ppo.py \
     ${RESUME_FROM:+--resume-from $RESUME_FROM} \
     --total-timesteps 30000000 \
-    --n-envs 192 \
+    --n-envs 96 \
     --n-steps 8192 \
-    --batch-size 131072 \
+    --batch-size 98304 \
     --n-epochs 15 \
     --learning-rate 3e-4 \
     --gamma 0.99 \
