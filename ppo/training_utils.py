@@ -111,6 +111,13 @@ def get_training_args():
         help="Directory for logs and checkpoints",
     )
     parser.add_argument(
+        "--resume-from",
+        type=str,
+        default=None,
+        help="Path to checkpoint to resume training from "
+        "(e.g., logs/ppo_insertion/checkpoints/PPO_2/ppo_aloha_9900000_steps.zip)",
+    )
+    parser.add_argument(
         "--checkpoint-freq",
         type=int,
         default=250_000,

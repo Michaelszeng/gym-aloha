@@ -9,7 +9,8 @@ from gym_aloha.constants import ACTIONS
 
 
 class TimeLimitMask(gym.Wrapper):
-    """Marks truncations caused by hitting the episode step limit.
+    """
+    Marks truncations caused by hitting the episode step limit.
 
     Stable-Baselines3 will NOT bootstrap the value if the info dict contains
     ``{"TimeLimit.truncated": True}``.  This avoids critic bias from fake
@@ -38,7 +39,8 @@ class TimeLimitMask(gym.Wrapper):
 
 
 class ClipActionWrapper(gym.ActionWrapper):
-    """Clip actions to the true joint limits specified in the XML.
+    """
+    Clip actions to the true joint limits specified in the XML.
 
     The wrapper queries the underlying ``dm_control`` Physics instance to obtain
     the per-joint ranges (``model.jnt_range``).  For the two gripper scalar
