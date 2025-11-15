@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# LLsub ./scripts/train_ppo_navigate_supercloud.sh -s 20 -g volta:1
+# LLsub ./train_ppo_supercloud.sh -s 20 -g volta:1
 
 # SuperCloud settings
 source /etc/profile
