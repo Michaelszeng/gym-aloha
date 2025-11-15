@@ -9,7 +9,7 @@ from action_wrappers import ClipActionWrapper, RateLimitActionWrapper, TimeLimit
 from model.feature_extractors import AlohaStateExtractor
 from rewards_wrappers import InsertionRewardShapingWrapperV2, SmoothnessPenaltyWrapper
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback, EvalCallback
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback, EvalCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
@@ -18,27 +18,49 @@ from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, VecNorma
 from training_utils import get_training_args
 
 import gym_aloha
-from ppo.logging_utils import InfoStatsCallback
+import wandb
+from ppo.logging_utils import InfoStatsCallback, WandbCallback
 from ppo.quiet_video_recorder import QuietVecVideoRecorder as VecVideoRecorder
 
 
 def train(args):
     # Create log directory
     os.makedirs(args.log_dir, exist_ok=True)
-    os.makedirs(f"{args.log_dir}/checkpoints", exist_ok=True)
 
-    tb_root = f"{args.log_dir}/tensorboard"
+    # Determine run ID by checking existing run folders
     algo_name = "PPO"
-    run_id = get_latest_run_id(tb_root, algo_name) + 1
+    existing_runs = [
+        d
+        for d in os.listdir(args.log_dir)
+        if d.startswith(f"{algo_name}_") and os.path.isdir(os.path.join(args.log_dir, d))
+    ]
+    if existing_runs:
+        run_ids = [int(d.split("_")[1]) for d in existing_runs if d.split("_")[1].isdigit()]
+        run_id = max(run_ids) + 1 if run_ids else 1
+    else:
+        run_id = 1
     run_name = f"{algo_name}_{run_id}"
 
-    # Create monitor folder
-    monitor_folder = f"{args.log_dir}/monitor/{run_name}"
-    os.makedirs(monitor_folder, exist_ok=True)
+    # Create run-specific directory structure
+    run_dir = f"{args.log_dir}/{run_name}"
+    os.makedirs(run_dir, exist_ok=True)
 
-    # Video recording directory
-    video_folder = f"{args.log_dir}/videos/{run_name}"
+    # Create subdirectories for this run
+    monitor_folder = f"{run_dir}/monitor"
+    video_folder = f"{run_dir}/videos"
+    os.makedirs(monitor_folder, exist_ok=True)
     os.makedirs(video_folder, exist_ok=True)
+
+    # Initialize wandb if requested
+    if args.use_wandb:
+        wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=run_name,
+            config=vars(args),
+            sync_tensorboard=True,  # Sync tensorboard logs
+            monitor_gym=True,
+        )
 
     print("=" * 80)
     print("PPO Training Configuration")
@@ -50,6 +72,7 @@ def train(args):
     print(f"Batch size: {args.batch_size}")
     print(f"Device: {args.device}")
     print(f"Log directory: {args.log_dir}")
+    print(f"Wandb: {'Enabled' if args.use_wandb else 'Disabled'}")
     print("=" * 80)
 
     # Create vectorized training environments with reward shaping
@@ -71,9 +94,10 @@ def train(args):
         seed=args.seed,
         vec_env_cls=SubprocVecEnv,
         wrapper_class=partial(InsertionRewardShapingWrapperV2, gamma=0.95, max_episode_steps=500),
+        monitor_dir=None,  # Disable automatic Monitor wrapping to avoid double-wrapping
     )
-    monitor_file = f"{monitor_folder}/train_monitor.csv"
-    train_env = VecMonitor(train_env, filename=monitor_file, info_keywords=("sparse_r", "potential"))
+    train_monitor_file = f"{monitor_folder}/train_monitor.csv"
+    train_env = VecMonitor(train_env, filename=train_monitor_file, info_keywords=("dense_r", "is_success"))
     train_env = VecNormalize(  # Normalise obs, keep rewards untouched
         train_env, training=True, norm_obs=True, norm_reward=True, clip_obs=10.0
     )
@@ -84,12 +108,16 @@ def train(args):
         n_envs=1,
         seed=args.seed + 1000,
         vec_env_cls=SubprocVecEnv,
+        monitor_dir=None,  # Disable automatic Monitor wrapping to avoid double-wrapping
     )
-    monitor_file = f"{monitor_folder}/eval_monitor.csv"
-    eval_env = VecMonitor(eval_env, filename=monitor_file)
+    eval_monitor_file = f"{monitor_folder}/eval_monitor.csv"
+    eval_env = VecMonitor(eval_env, filename=eval_monitor_file)
     # Add video recorder BEFORE normalization so the outermost env remains VecNormalize
     EPISODE_LEN = eval_env.get_attr("_max_episode_steps")[0]
     RECORD_EVERY_N_EVS = 50
+    # Get the render FPS from environment metadata (default 50 Hz for Aloha)
+    render_fps = eval_env.get_attr("metadata")[0].get("render_fps", 50)
+    print(f"Video recording FPS from environment metadata: {render_fps}")
     eval_env = VecVideoRecorder(
         eval_env,
         video_folder,
@@ -97,6 +125,7 @@ def train(args):
         video_length=EPISODE_LEN,  # Record only first episode of eval
         name_prefix="eval",
     )
+    print(f"VecVideoRecorder FPS: {eval_env.frames_per_sec}")
     eval_env = VecNormalize(eval_env, training=False, norm_obs=True, norm_reward=False, clip_obs=10.0)
     eval_env.obs_rms = train_env.obs_rms  # Share running means/stds
 
@@ -124,15 +153,17 @@ def train(args):
         target_kl=args.target_kl,
         max_grad_norm=args.max_grad_norm,
         policy_kwargs=policy_kwargs,
-        tensorboard_log=f"{args.log_dir}/tensorboard",
+        tensorboard_log=f"{run_dir}/tensorboard",
         device=args.device,
         verbose=1,
     )
 
     # Setup callbacks
+    checkpoint_folder = f"{run_dir}/checkpoints"
+    os.makedirs(checkpoint_folder, exist_ok=True)
     checkpoint_callback = CheckpointCallback(
         save_freq=args.checkpoint_freq // args.n_envs,  # Adjust for parallel envs
-        save_path=f"{args.log_dir}/checkpoints",
+        save_path=checkpoint_folder,
         name_prefix="ppo_aloha",
         save_replay_buffer=False,
         save_vecnormalize=True,
@@ -140,15 +171,18 @@ def train(args):
 
     eval_callback = EvalCallback(
         eval_env,
-        best_model_save_path=f"{args.log_dir}/best_model",
-        log_path=f"{args.log_dir}/eval",
+        best_model_save_path=f"{run_dir}/best_model",
+        log_path=f"{run_dir}/eval",
         eval_freq=args.eval_freq // args.n_envs,  # Adjust for parallel envs
         n_eval_episodes=args.n_eval_episodes,
         deterministic=True,
         render=False,
     )
 
-    callback_list = CallbackList([checkpoint_callback, eval_callback, InfoStatsCallback()])
+    callbacks = [checkpoint_callback, eval_callback, InfoStatsCallback()]
+    if args.use_wandb:
+        callbacks.append(WandbCallback())
+    callback_list = CallbackList(callbacks)
 
     # Train the agent
     print("\nStarting training...")
@@ -159,13 +193,19 @@ def train(args):
     )
 
     # Save final model
-    final_model_path = f"{args.log_dir}/final_model"
+    final_model_folder = f"{run_dir}/final_model"
+    os.makedirs(final_model_folder, exist_ok=True)
+    final_model_path = f"{final_model_folder}/final_model"
     model.save(final_model_path)
     print(f"\nTraining complete! Final model saved to {final_model_path}")
 
     # Cleanup
     train_env.close()
     eval_env.close()
+
+    # Finish wandb run
+    if args.use_wandb:
+        wandb.finish()
 
     return model
 

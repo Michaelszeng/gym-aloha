@@ -8,17 +8,33 @@ mkdir -p $LOG_DIR
 pkill -f tensorboard
 tensorboard --logdir logs/ppo_insertion/tensorboard --port 6006 --bind_all &
 
-# Start training with reasonable defaults
+# Wandb configuration
+USE_WANDB=true
+WANDB_PROJECT="gym-aloha-insertion-ppo"
+WANDB_ENTITY=""  # Optional: set to your wandb username or team
+
 echo "Starting PPO training..."
 python ppo/train_ppo.py \
     --total-timesteps 10000000 \
-    --n-envs 8 \
-    --learning-rate 5e-6 \
-    --batch-size 512 \
+    --n-envs 32 \
+    --n-steps 2048 \
+    --batch-size 8192 \
+    --n-epochs 10 \
+    --learning-rate 3e-4 \
+    --gamma 0.99 \
+    --gae-lambda 0.95 \
+    --clip-range 0.2 \
+    --ent-coef 0.01 \
+    --vf-coef 0.5 \
+    --max-grad-norm 0.5 \
+    --target-kl 0.01 \
     --log-dir $LOG_DIR \
-    --checkpoint-freq 50000 \
-    --eval-freq 25000 \
-    --device auto
+    --checkpoint-freq 100000 \
+    --eval-freq 50000 \
+    --device auto \
+    ${USE_WANDB:+--use-wandb} \
+    --wandb-project $WANDB_PROJECT \
+    ${WANDB_ENTITY:+--wandb-entity $WANDB_ENTITY}
 
 echo "Training complete! Check logs/ppo_insertion for results."
 echo "To view tensorboard: tensorboard --logdir logs/ppo_insertion/tensorboard"

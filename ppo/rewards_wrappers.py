@@ -406,6 +406,8 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
             reward = reward / max_reward
             info["max_reward_estimate"] = max_reward
 
+        info["dense_r"] = reward
+
         return reward
 
 

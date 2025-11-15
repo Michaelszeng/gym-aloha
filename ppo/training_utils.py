@@ -113,13 +113,13 @@ def get_training_args():
     parser.add_argument(
         "--checkpoint-freq",
         type=int,
-        default=50_000,
+        default=250_000,
         help="Checkpoint save frequency (in timesteps)",
     )
     parser.add_argument(
         "--eval-freq",
         type=int,
-        default=25_000,
+        default=50_000,
         help="Evaluation frequency (in timesteps)",
     )
     parser.add_argument(
@@ -135,6 +135,25 @@ def get_training_args():
         type=str,
         default="auto",
         help="Device to use (auto, cpu, cuda)",
+    )
+
+    # Wandb integration
+    parser.add_argument(
+        "--use-wandb",
+        action="store_true",
+        help="Enable wandb logging",
+    )
+    parser.add_argument(
+        "--wandb-project",
+        type=str,
+        default="gym-aloha-insertion-ppo",
+        help="Wandb project name",
+    )
+    parser.add_argument(
+        "--wandb-entity",
+        type=str,
+        default=None,
+        help="Wandb entity (username or team name)",
     )
 
     args = parser.parse_args()

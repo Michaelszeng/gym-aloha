@@ -1,5 +1,6 @@
 env/
 logs/
+wandb/
 
 # Misc
 .DS_Store

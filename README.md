@@ -120,6 +120,47 @@ The arms and the items (block, peg, socket) start at a random position and angle
 * `visualization_height`: (int) The height of the visualized image. Default is `480`.
 
 
+## Training
+
+`train_ppo.sh`
+
+Training output directory structure:
+```
+logs/ppo_insertion/
+├── PPO_1/
+│   ├── checkpoints/
+│   │   ├── ppo_aloha_100000_steps.zip
+│   │   ├── ppo_aloha_100000_steps_vecnormalize.pkl
+│   │   ├── ppo_aloha_200000_steps.zip
+│   │   └── ...
+│   ├── best_model/
+│   │   ├── best_model.zip
+│   │   └── best_model_vecnormalize.pkl
+│   ├── final_model/
+│   │   ├── final_model.zip
+│   │   └── final_model_vecnormalize.pkl
+│   ├── eval/
+│   │   └── evaluations.npz
+│   ├── monitor/
+│   │   ├── train_monitor.csv
+│   │   └── eval_monitor.csv
+│   ├── tensorboard/
+│   │   └── events.out.tfevents...
+│   └── videos/
+│       ├── eval-step-0-to-step-500.mp4
+│       └── ...
+├── PPO_2/
+│   ├── checkpoints/
+│   ├── best_model/
+│   ├── final_model/
+│   ├── eval/
+│   ├── monitor/
+│   ├── tensorboard/
+│   └── videos/
+└── PPO_3/
+    └── ...
+```
+
 ### 🔧 GPU Rendering (EGL)
 
 Rendering on the GPU can be significantly faster than CPU. However, MuJoCo may silently fall back to CPU rendering if EGL is not properly configured. To force GPU rendering and avoid fallback issues, you can use the following snippet:
