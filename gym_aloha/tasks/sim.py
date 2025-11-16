@@ -32,8 +32,9 @@ Observation space: {"qpos": Concat[ left_arm_qpos (6),         # absolute joint 
 
 
 class BimanualViperXTask(base.Task):
-    def __init__(self, random=None):
+    def __init__(self, random=None, render_images=True):
         super().__init__(random=random)
+        self.render_images = render_images
 
     def before_step(self, action, physics):
         left_arm_action = action[:6]
@@ -90,9 +91,11 @@ class BimanualViperXTask(base.Task):
         obs["qvel"] = self.get_qvel(physics)
         obs["env_state"] = self.get_env_state(physics)
         obs["images"] = {}
-        obs["images"]["top"] = physics.render(height=480, width=640, camera_id="top")
-        obs["images"]["angle"] = physics.render(height=480, width=640, camera_id="angle")
-        obs["images"]["vis"] = physics.render(height=480, width=640, camera_id="front_close")
+        # Only render images if needed (when obs_type includes "pixels")
+        if self.render_images:
+            obs["images"]["top"] = physics.render(height=480, width=640, camera_id="top")
+            obs["images"]["angle"] = physics.render(height=480, width=640, camera_id="angle")
+            obs["images"]["vis"] = physics.render(height=480, width=640, camera_id="front_close")
 
         return obs
 
@@ -102,8 +105,8 @@ class BimanualViperXTask(base.Task):
 
 
 class TransferCubeTask(BimanualViperXTask):
-    def __init__(self, random=None):
-        super().__init__(random=random)
+    def __init__(self, random=None, render_images=True):
+        super().__init__(random=random, render_images=render_images)
         self.max_reward = 4
 
     def initialize_episode(self, physics):
@@ -151,8 +154,8 @@ class TransferCubeTask(BimanualViperXTask):
 
 
 class InsertionTask(BimanualViperXTask):
-    def __init__(self, random=None):
-        super().__init__(random=random)
+    def __init__(self, random=None, render_images=True):
+        super().__init__(random=random, render_images=render_images)
         self.max_reward = 4
 
     def initialize_episode(self, physics):

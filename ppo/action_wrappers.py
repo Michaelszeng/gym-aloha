@@ -9,7 +9,7 @@ class DeltaJointPositionWrapper(gym.ActionWrapper):
     Converts actions from [-1, 1]^14 to delta joint positions.
     The action represents a desired change in joint position, scaled by max_delta.
     """
-    def __init__(self, env, max_delta=0.03):
+    def __init__(self, env, max_delta=0.04):
         super().__init__(env)
         self.max_delta = float(max_delta)
         

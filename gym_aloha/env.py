@@ -145,15 +145,18 @@ class AlohaEnv(gym.Env):
     def _make_env_task(self, task_name):
         # time limit is controlled by StepCounter in env factory
         time_limit = float("inf")
+        
+        # Only render images if obs_type includes "pixels"
+        render_images = "pixels" in self.obs_type
 
         if task_name == "transfer_cube":
             xml_path = ASSETS_DIR / "bimanual_viperx_transfer_cube.xml"
             physics = mujoco.Physics.from_xml_path(str(xml_path))
-            task = TransferCubeTask()
+            task = TransferCubeTask(render_images=render_images)
         elif task_name == "insertion":
             xml_path = ASSETS_DIR / "bimanual_viperx_insertion.xml"
             physics = mujoco.Physics.from_xml_path(str(xml_path))
-            task = InsertionTask()
+            task = InsertionTask(render_images=render_images)
         elif task_name == "end_effector_transfer_cube":
             raise NotImplementedError()
             xml_path = ASSETS_DIR / "bimanual_viperx_end_effector_transfer_cube.xml"
