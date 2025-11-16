@@ -115,11 +115,6 @@ try:
 
             output_lines.append("")
             output_lines.append("=== Viewer State (No Step) ===")
-
-            # Show grasp state and success status used for rewards
-            output_lines.append(
-                f"Grasped (used for rewards): L={info['is_grasped_left']}, R={info['is_grasped_right']}"
-            )
             output_lines.append("")
 
             # Show all other info

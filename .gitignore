@@ -2,6 +2,7 @@ env/
 logs/
 wandb/
 *log*
+events.out.tfevents.*
 
 # Misc
 .DS_Store
