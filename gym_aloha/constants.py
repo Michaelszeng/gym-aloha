@@ -46,6 +46,25 @@ ACTIONS = [
     "right_arm_gripper",
 ]
 
+# MuJoCo XML joint names (for querying physics model)
+# Order matches ACTIONS, excluding grippers (indices 6 and 13)
+XML_JOINT_NAMES = [
+    # left arm 6 DOF
+    "vx300s_left/waist",
+    "vx300s_left/shoulder",
+    "vx300s_left/elbow",
+    "vx300s_left/forearm_roll",
+    "vx300s_left/wrist_angle",
+    "vx300s_left/wrist_rotate",
+    # right arm 6 DOF
+    "vx300s_right/waist",
+    "vx300s_right/shoulder",
+    "vx300s_right/elbow",
+    "vx300s_right/forearm_roll",
+    "vx300s_right/wrist_angle",
+    "vx300s_right/wrist_rotate",
+]
+
 
 START_ARM_POSE = [
     0,

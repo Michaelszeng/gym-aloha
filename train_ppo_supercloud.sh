@@ -48,7 +48,7 @@ fi
 
 python ppo/train_ppo.py \
     ${RESUME_FROM:+--resume-from $RESUME_FROM} \
-    --total-timesteps 30000000 \
+    --total-timesteps 100000000 \
     --n-envs 96 \
     --n-steps 8192 \
     --batch-size 98304 \

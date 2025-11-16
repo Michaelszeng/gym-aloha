@@ -47,6 +47,7 @@ def create_inference_env(env_id: str, use_reward_shaping: bool = True):
     # Read max_episode_steps from the environment spec (set during registration)
     max_episode_steps = env.spec.max_episode_steps
     env = ClipActionWrapper(env)
+    env = DeltaJointPositionWrapper(env)
     # env = RateLimitActionWrapper(env, max_delta=0.1)
 
     # Apply reward shaping wrapper if requested (matches training env)

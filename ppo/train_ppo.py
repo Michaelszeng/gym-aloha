@@ -5,7 +5,7 @@ import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
-from action_wrappers import ClipActionWrapper, RateLimitActionWrapper
+from action_wrappers import ClipActionWrapper, RateLimitActionWrapper, DeltaJointPositionWrapper
 from model.feature_extractors import AlohaStateExtractor
 from rewards_wrappers import InsertionRewardShapingWrapperV2
 from stable_baselines3 import PPO
@@ -94,7 +94,8 @@ def train(args):
         env = gym.make(args.env_id, obs_type="state", render_mode="rgb_array")
         # NOTE: not sure if this should be used or not (usually not, but supposedly "prevents exploding")
         env = ClipActionWrapper(env)  # enforce joint limits
-        env = RateLimitActionWrapper(env, max_delta=0.4)  # Needed to prevent huge accel/vels causing Mujoco crashes
+        env = DeltaJointPositionWrapper(env)
+        # env = RateLimitActionWrapper(env, max_delta=0.4)  # Needed to prevent huge accel/vels causing Mujoco crashes
         return env
 
     train_env = make_vec_env(

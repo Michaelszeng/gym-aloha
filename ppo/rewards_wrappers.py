@@ -156,12 +156,12 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         Calculates the dense reward for a given observation.
 
         The reward structure:
-        - Universal: ~22 points (5 reach + 2 stillness + 1 arm resting + 1 gripper Y-align +
+        - Universal: ~21 points (5 reach + 1 stillness + 1 arm resting + 1 gripper Y-align +
                                   5 collision + 2 grasp + 6 success bonus)
         - Phase 1 (Not Grasped): ~1 point (1 gripper-over-obj)
         - Phase 2 (Grasped Both): ~9 points (1 phase bonus + 5 position + 3 orientation)
 
-        Total max reward per step: ~32 points (unnormalized)
+        Total max reward per step: ~31 points (unnormalized)
         """
         reward = 0.0
 
@@ -235,8 +235,8 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         right_vel_norm = np.linalg.norm(right_gripper_vel)
 
         # Dividing by 1 before tanh means velocities < 1 m/s receive less penalty
-        left_still_reward = 1.0 * (1 - np.tanh(left_vel_norm / 1.0))
-        right_still_reward = 1.0 * (1 - np.tanh(right_vel_norm / 1.0))
+        left_still_reward = 0.5 * (1 - np.tanh(left_vel_norm / 1.0))
+        right_still_reward = 0.5 * (1 - np.tanh(right_vel_norm / 1.0))
         ee_still_reward = left_still_reward + right_still_reward
 
         reward += ee_still_reward
@@ -452,7 +452,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         # NORMALIZATION
         # ---------------------------------------------------
         if self.normalize_rewards:
-            max_reward = 32.0  # Approximate maximum
+            max_reward = 31.0  # Approximate maximum
             reward = reward / max_reward
             info["max_reward_estimate"] = max_reward
 

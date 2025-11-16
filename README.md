@@ -122,6 +122,8 @@ The arms and the items (block, peg, socket) start at a random position and angle
 
 ## Training
 
+### Training Locally
+
 `train_ppo.sh`
 
 Training output directory structure:
@@ -160,6 +162,18 @@ logs/ppo_insertion/
 └── PPO_3/
     └── ...
 ```
+
+### Training on SuperCloud
+
+```bash
+# Interactively:
+LLsub -i -s 20 -g volta:1
+./train_ppo_supercloud.sh
+
+# Non-interactively:
+LLsub ./train_ppo_supercloud.sh -s 20 -g volta:1
+```
+
 
 ### 🔧 GPU Rendering (EGL)
 

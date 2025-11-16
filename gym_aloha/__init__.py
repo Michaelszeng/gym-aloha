@@ -3,7 +3,7 @@ from gymnasium.envs.registration import register
 register(
     id="gym_aloha/AlohaInsertion-v0",
     entry_point="gym_aloha.env:AlohaEnv",
-    max_episode_steps=300,
+    max_episode_steps=1000,
     # Even after seeding, the rendered observations are slightly different,
     # so we set `nondeterministic=True` to pass `check_env` tests
     nondeterministic=True,
@@ -13,7 +13,7 @@ register(
 register(
     id="gym_aloha/AlohaTransferCube-v0",
     entry_point="gym_aloha.env:AlohaEnv",
-    max_episode_steps=300,
+    max_episode_steps=1000,
     # Even after seeding, the rendered observations are slightly different,
     # so we set `nondeterministic=True` to pass `check_env` tests
     nondeterministic=True,
