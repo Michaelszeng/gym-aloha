@@ -24,6 +24,8 @@ class WandbCallback(BaseCallback):
 class InfoStatsCallback(BaseCallback):
     """
     Callback to log important metrics from the info dictionary to TensorBoard and wandb.
+    
+    NOTE: logging is done per-step (averaged over all parallel environments).
     """
 
     def __init__(self):
