@@ -138,8 +138,6 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         dense_reward = self._calculate_dense_reward(
             obs, info, is_grasped_left_pre, is_grasped_right_pre, is_grasped_both_pre
         )
-        info["dense_r"] = dense_reward  # Log dense reward
-
         total_reward = dense_reward * self.gamma
 
         return obs, total_reward, terminated, truncated, info
@@ -156,7 +154,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         Calculates the dense reward for a given observation.
 
         The reward structure:
-        - Universal: ~34 points (6 reach + 0.25 stillness + 0.25 arm resting + 0.5 forearm roll + 1 gripper Y-align +
+        - Universal: ~35.5 points (6 reach + 0.25 stillness + 0.25 arm resting + 2.0 forearm roll + 1 gripper Y-align +
                                   5 collision + 10 grasp + 10 success bonus)
         - Phase 1 (Not Grasped): ~10 points (4 gripper-over-obj + 3 z-height guidance + 3 gripper-state)
             - Subphases: 
@@ -164,7 +162,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
                 - close in XY and Z (reward closed grippers) vs far in XY or Z (reward open grippers)
         - Phase 2 (Grasped Both): ~9 points (1 phase bonus + 5 position + 3 orientation)
 
-        Total max reward per step: ~52 points (unnormalized)
+        Total max reward per step: ~53.5 points (unnormalized)
         """
         reward = 0.0
 
@@ -248,7 +246,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         info["left_gripper_vel_norm"] = left_vel_norm
         info["right_gripper_vel_norm"] = right_vel_norm
 
-        # FOREARM ROLL REWARD (max: 0.5)
+        # FOREARM ROLL REWARD (max: 2.0)
         # Penalizes forearm roll deviation from 0 degrees. Try to avoid the forearm rotating 180 degrees, which is what
         # seems to be happening.
         left_forearm_roll = current_qpos[3]  # Left arm forearm_roll joint
@@ -256,8 +254,8 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         left_roll_dev = np.abs(left_forearm_roll)
         right_roll_dev = np.abs(right_forearm_roll)
         
-        left_roll_reward = 0.25 * 0.5 * (1 - np.tanh(6*(left_roll_dev - 0.8)))  # https://www.desmos.com/calculator/cmc9ckhmqo
-        right_roll_reward = 0.25 * 0.5 * (1 - np.tanh(6*(right_roll_dev - 0.8)))  # https://www.desmos.com/calculator/cmc9ckhmqo
+        left_roll_reward = 0.5 * (1 - np.tanh(6*(left_roll_dev - 0.8)))  # https://www.desmos.com/calculator/cmc9ckhmqo
+        right_roll_reward = 0.5 * (1 - np.tanh(6*(right_roll_dev - 0.8)))  # https://www.desmos.com/calculator/cmc9ckhmqo
         forearm_roll_reward = left_roll_reward + right_roll_reward
         
         reward += forearm_roll_reward
@@ -406,7 +404,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
             # Stage 2 (close in XY): Max reward when at or below object Z
             left_gripper_z_dist = left_finger_avg_pos[2] - socket_pos[2]
             right_gripper_z_dist = right_finger_avg_pos[2] - peg_pos[2]
-            if left_over_socket_dist > 0.05:  # Stage 1: Far in XY
+            if left_over_socket_dist > 0.08:  # Stage 1: Far in XY
                 # Heavy penalty below 0.05, light penalty above 0.05
                 z_above_safe = left_finger_avg_pos[2] - (socket_pos[2] + 0.05)
                 left_z_reward = 1 - np.tanh(2 * z_above_safe)**2 if z_above_safe >= 0 else 1 - np.tanh(30 * z_above_safe)**2  # https://www.desmos.com/calculator/2jb5qy7fxi
@@ -445,7 +443,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
             right_gripper_qpos = current_qpos[13]
             gripper_state_reward = 0.0
             # Phase 1: Encourage OPEN grippers when approaching
-            if left_over_socket_dist > 0.03 or left_gripper_z_dist > 0.01:  # 0.01 = z-tolerance for successful grasp
+            if left_over_socket_dist > 0.05 or left_gripper_z_dist > 0.01:  # 0.01 = z-tolerance for successful grasp
                 left_open_reward = 0.5 * np.tanh(2 * (left_gripper_qpos - 0.1))  # 0.1 is fully closed
                 gripper_state_reward += left_open_reward
                 info["left_open_r"] = left_open_reward
@@ -543,12 +541,12 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         # ---------------------------------------------------
         # NORMALIZATION
         # ---------------------------------------------------
+        info["dense_r"] = reward  # Log unnormalized dense reward
+        
         if self.normalize_rewards:
-            max_reward = 52  # Approximate maximum
+            max_reward = 53.5  # Approximate maximum
             reward = reward / max_reward
             info["max_reward_estimate"] = max_reward
-
-        info["dense_r"] = reward
 
         return reward
 

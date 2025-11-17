@@ -43,8 +43,29 @@ class InfoStatsCallback(BaseCallback):
                 "reach_socket_r",
                 "ee_still_r",
                 "arm_resting_r",
+                "forearm_roll_r",
+                "gripper_y_align_r",
                 "grasp_r",
                 "success_r",
+            ]:
+                if key in info:
+                    metrics.setdefault(key, []).append(info[key])
+
+            # === End-Effector Velocity Metrics ===
+            for key in [
+                "left_gripper_vel_norm",
+                "right_gripper_vel_norm",
+            ]:
+                if key in info:
+                    metrics.setdefault(key, []).append(info[key])
+
+            # === Arm Configuration Metrics ===
+            for key in [
+                "left_roll_dev",
+                "right_roll_dev",
+                "arm_to_resting_diff",
+                "left_y_error",
+                "right_y_error",
             ]:
                 if key in info:
                     metrics.setdefault(key, []).append(info[key])
@@ -53,6 +74,7 @@ class InfoStatsCallback(BaseCallback):
             for key in [
                 "step_no_collision_r",
                 "cumulative_collision_r",
+                "raw_collision_force",
                 "scaled_collision_force",
                 "cumulative_collision_force",
             ]:
@@ -65,6 +87,13 @@ class InfoStatsCallback(BaseCallback):
                 "grasped_r",
                 "right_over_peg_r",
                 "left_over_socket_r",
+                "gripper_state_r",
+                "left_z_r",
+                "right_z_r",
+                "left_open_r",
+                "left_close_r",
+                "right_open_r",
+                "right_close_r",
                 "align_pos_r",
                 "align_orient_r",
             ]:
@@ -72,7 +101,19 @@ class InfoStatsCallback(BaseCallback):
                     metrics.setdefault(key, []).append(info[key])
 
             # === Distance Metrics ===
-            for key in ["dist_right_to_peg", "dist_left_to_socket", "peg_socket_dist", "alignment_error"]:
+            for key in [
+                "dist_right_to_peg",
+                "dist_left_to_socket",
+                "right_over_peg_dist",
+                "left_over_socket_dist",
+                "z_diff_socket",
+                "z_diff_peg",
+                "peg_socket_dist",
+                "peg_socket_weighted_dist",
+                "peg_socket_xy_dist",
+                "peg_socket_z_dist",
+                "alignment_error",
+            ]:
                 if key in info:
                     metrics.setdefault(key, []).append(info[key])
 
@@ -83,6 +124,11 @@ class InfoStatsCallback(BaseCallback):
 
             # === Episode Tracking ===
             for key in ["episode_step", "remaining_steps"]:
+                if key in info:
+                    metrics.setdefault(key, []).append(info[key])
+
+            # === Optional Metrics ===
+            for key in ["max_reward_estimate"]:
                 if key in info:
                     metrics.setdefault(key, []).append(info[key])
 

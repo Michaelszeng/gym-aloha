@@ -74,7 +74,7 @@ def train(args):
             entity=args.wandb_entity,
             name=run_name,
             config=vars(args),
-            sync_tensorboard=True,  # Sync tensorboard logs
+            # sync_tensorboard=True,  # Sync tensorboard logs
             monitor_gym=True,
         )
 
