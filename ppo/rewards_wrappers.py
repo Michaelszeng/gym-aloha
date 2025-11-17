@@ -45,7 +45,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         # Episode configuration
         max_episode_steps: int = 500,  # Maximum steps per episode for success reward calculation
         # Reward scaling
-        normalize_rewards: bool = False,  # Whether to normalize to [0, 1]
+        normalize_rewards: bool = True,  # Whether to normalize to [0, 1]
     ):
         super().__init__(env)
         self.gamma = gamma
@@ -280,7 +280,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         info["arm_resting_r"] = arm_resting_reward
         info["arm_to_resting_diff"] = arm_to_resting_diff
 
-        # GRIPPER Y-AXIS ALIGNMENT REWARD (max: 1.0)
+        # GRIPPER Y-AXIS ALIGNMENT REWARD (max: 2.0)
         # Encourages gripper Y-axes to align with world Y-axis for consistent orientation.
         # This helps maintain stable grasping orientation throughout the task.
         left_rot = Rotation.from_quat(left_gripper_quat)
@@ -294,8 +294,8 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         left_y_error = np.arccos(np.abs(left_y_dot))  # Use abs to allow flipped alignment
         right_y_error = np.arccos(np.abs(right_y_dot))
         
-        left_y_align_reward = 0.5 * (1 - np.tanh(2 * left_y_error))
-        right_y_align_reward = 0.5 * (1 - np.tanh(2 * right_y_error))
+        left_y_align_reward = 1.0 * (1 - np.tanh(2 * left_y_error))
+        right_y_align_reward = 1.0 * (1 - np.tanh(2 * right_y_error))
         gripper_y_align_reward = left_y_align_reward + right_y_align_reward
 
         reward += gripper_y_align_reward
