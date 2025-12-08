@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=gym-aloha-ppo
 #SBATCH --account=locomotion
-#SBATCH --partition=locomotion                  # or e.g. drl-a6000, csail-shared-h200
+#SBATCH --partition=csail-shared                  # or e.g. drl-a6000, csail-shared-h200
 #SBATCH --qos=tig-main                   # or group-specific QoS
 #SBATCH --time=72:00:00                  # max runtime
 #SBATCH --gpus=1                         # number of GPUs
