@@ -152,6 +152,8 @@ class InsertionRewardShapingWrapperV3(gym.Wrapper):
                                   5 collision + 10 grasp + 10 success bonus)
         - Phase 1 (Not Grasped): ~10 points (4 gripper-over-obj + 3 z-height guidance + 3 gripper-state)
             - Subphases:
+        - Phase 1 (Not Grasped): ~13 points (6 gripper-over-obj + 4 z-height guidance + 3 gripper-state)
+            - Subphases:
                 - close in XY (reward z below peg/socket) vs far in XY (reward z above 0.05 above peg/socket)
                 - close in XY and Z (reward closed grippers) vs far in XY or Z (reward open grippers)
         - Phase 2 (Grasped Both): ~9 points (1 phase bonus + 5 position + 3 orientation)
@@ -518,7 +520,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         # Episode configuration
         max_episode_steps: int = 500,  # Maximum steps per episode for success reward calculation
         # Reward scaling
-        normalize_rewards: bool = False,  # Whether to normalize to [0, 1]
+        normalize_rewards: bool = True,  # Whether to normalize to [0, 1]
     ):
         super().__init__(env)
         self.gamma = gamma
@@ -611,8 +613,6 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         dense_reward = self._calculate_dense_reward(
             obs, info, is_grasped_left_pre, is_grasped_right_pre, is_grasped_both_pre
         )
-        info["dense_r"] = dense_reward  # Log dense reward
-
         total_reward = dense_reward * self.gamma
 
         return obs, total_reward, terminated, truncated, info
@@ -629,7 +629,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         Calculates the dense reward for a given observation.
 
         The reward structure:
-        - Universal: ~34 points (6 reach + 0.25 stillness + 0.25 arm resting + 0.5 forearm roll + 1 gripper Y-align +
+        - Universal: ~36.5 points (6 reach + 0.25 stillness + 0.25 arm resting + 2.0 forearm roll + 2 gripper Y-align +
                                   5 collision + 10 grasp + 10 success bonus)
         - Phase 1 (Not Grasped): ~10 points (4 gripper-over-obj + 3 z-height guidance + 3 gripper-state)
             - Subphases:
@@ -637,7 +637,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
                 - close in XY and Z (reward closed grippers) vs far in XY or Z (reward open grippers)
         - Phase 2 (Grasped Both): ~9 points (1 phase bonus + 5 position + 3 orientation)
 
-        Total max reward per step: ~52 points (unnormalized)
+        Total max reward per step: ~57.5 points (unnormalized)
         """
         reward = 0.0
 
@@ -725,7 +725,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         info["left_gripper_vel_norm"] = left_vel_norm
         info["right_gripper_vel_norm"] = right_vel_norm
 
-        # FOREARM ROLL REWARD (max: 0.5)
+        # FOREARM ROLL REWARD (max: 2.0)
         # Penalizes forearm roll deviation from 0 degrees. Try to avoid the forearm rotating 180 degrees, which is what
         # seems to be happening.
         left_forearm_roll = current_qpos[3]  # Left arm forearm_roll joint
@@ -733,11 +733,11 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         left_roll_dev = np.abs(left_forearm_roll)
         right_roll_dev = np.abs(right_forearm_roll)
 
-        left_roll_reward = (
-            0.25 * 0.5 * (1 - np.tanh(6 * (left_roll_dev - 0.8)))
+        left_roll_reward = 0.5 * (
+            1 - np.tanh(6 * (left_roll_dev - 0.8))
         )  # https://www.desmos.com/calculator/cmc9ckhmqo
-        right_roll_reward = (
-            0.25 * 0.5 * (1 - np.tanh(6 * (right_roll_dev - 0.8)))
+        right_roll_reward = 0.5 * (
+            1 - np.tanh(6 * (right_roll_dev - 0.8))
         )  # https://www.desmos.com/calculator/cmc9ckhmqo
         forearm_roll_reward = left_roll_reward + right_roll_reward
 
@@ -763,7 +763,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         info["arm_resting_r"] = arm_resting_reward
         info["arm_to_resting_diff"] = arm_to_resting_diff
 
-        # GRIPPER Y-AXIS ALIGNMENT REWARD (max: 1.0)
+        # GRIPPER Y-AXIS ALIGNMENT REWARD (max: 2.0)
         # Encourages gripper Y-axes to align with world Y-axis for consistent orientation.
         # This helps maintain stable grasping orientation throughout the task.
         left_rot = Rotation.from_quat(left_gripper_quat)
@@ -777,8 +777,8 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         left_y_error = np.arccos(np.abs(left_y_dot))  # Use abs to allow flipped alignment
         right_y_error = np.arccos(np.abs(right_y_dot))
 
-        left_y_align_reward = 0.5 * (1 - np.tanh(2 * left_y_error))
-        right_y_align_reward = 0.5 * (1 - np.tanh(2 * right_y_error))
+        left_y_align_reward = 1.0 * (1 - np.tanh(2 * left_y_error))
+        right_y_align_reward = 1.0 * (1 - np.tanh(2 * right_y_error))
         gripper_y_align_reward = left_y_align_reward + right_y_align_reward
 
         reward += gripper_y_align_reward
@@ -851,29 +851,19 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         if not is_grasped_both:
             not_grasped_reward = 0.0
 
-            # GRIPPER OVER OBJECT REWARDS (max: 4.0)
+            # GRIPPER OVER OBJECT REWARDS (max: 6.0)
             # Encourage gripper fine alignment with object in xy-plane (top-down view).
             # This helps ensure proper grasp orientation before descending.
             # Uses only xy coordinates to check horizontal alignment.
-            # Only rewards if gripper is within threshold distance (otherwise reward = 0)
-            # Distances < 0.02m receive maximum reward (0.5), then decay smoothly
             right_over_peg_dist = np.linalg.norm(right_finger_avg_pos[:2] - peg_pos[:2])
             left_over_socket_dist = np.linalg.norm(left_finger_avg_pos[:2] - socket_pos[:2])
 
-            # Only give reward if within threshold distance
-            # <0.01 distance reaps max reward
-            # 30x mulitplier so that reward increases very sharply only at very small distances
-            if right_over_peg_dist < self.gripper_over_obj_threshold:
-                adjusted_right_dist = max(0, right_over_peg_dist - 0.01)
-                right_over_peg_reward = 2.0 * (1 - np.tanh(30 * adjusted_right_dist))
-            else:
-                right_over_peg_reward = 0.0
-
-            if left_over_socket_dist < self.gripper_over_obj_threshold:
-                adjusted_left_dist = max(0, left_over_socket_dist - 0.01)
-                left_over_socket_reward = 2.0 * (1 - np.tanh(30 * adjusted_left_dist))
-            else:
-                left_over_socket_reward = 0.0
+            # any distance <0.01 reaps max reward
+            # 15 mulitplier so that reward increases very sharply only at very small distances
+            adjusted_right_dist = max(0, right_over_peg_dist - 0.01)
+            right_over_peg_reward = 3.0 * (1 - np.tanh(15 * adjusted_right_dist))
+            adjusted_left_dist = max(0, left_over_socket_dist - 0.01)
+            left_over_socket_reward = 3.0 * (1 - np.tanh(15 * adjusted_left_dist))
 
             not_grasped_reward += right_over_peg_reward + left_over_socket_reward
 
@@ -882,12 +872,12 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
             info["right_over_peg_dist"] = right_over_peg_dist
             info["left_over_socket_dist"] = left_over_socket_dist
 
-            # TWO-STAGE Z-HEIGHT GUIDANCE (max: 3.0)
+            # TWO-STAGE Z-HEIGHT GUIDANCE (max: 4.0)
             # Stage 1 (far in XY): Reward being close to 0.05 above object Z
             # Stage 2 (close in XY): Max reward when at or below object Z
             left_gripper_z_dist = left_finger_avg_pos[2] - socket_pos[2]
             right_gripper_z_dist = right_finger_avg_pos[2] - peg_pos[2]
-            if left_over_socket_dist > 0.05:  # Stage 1: Far in XY
+            if left_over_socket_dist > 0.08:  # Stage 1: Far in XY
                 # Heavy penalty below 0.05, light penalty above 0.05
                 z_above_safe = left_finger_avg_pos[2] - (socket_pos[2] + 0.05)
                 left_z_reward = (
@@ -906,8 +896,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
                 z_above_safe = right_finger_avg_pos[2] - (peg_pos[2] + 0.05)
                 right_z_reward = (
                     1 - np.tanh(2 * z_above_safe) ** 2 if z_above_safe >= 0 else 1 - np.tanh(30 * z_above_safe) ** 2
-                )  # https://www.desmos.com/calculator/2jb5qy7fxi
-                info["right_z_stage"] = "approach_high"
+                )  # https://www.desmos.com/calculator/2jb5qy7fxi                info["right_z_stage"] = "approach_high"
             else:  # Stage 2: Close in XY, now descend
                 # Maximum reward when at or below peg Z, reduced reward when above
                 z_above_peg = right_finger_avg_pos[2] - peg_pos[2]
@@ -915,8 +904,6 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
                 right_z_reward += 1.0  # To ensure monotonic reward increase at phase transition
                 info["right_z_stage"] = "descend"
 
-            left_z_reward *= 0.75  # Apply scaling
-            right_z_reward *= 0.75
             not_grasped_reward += left_z_reward + right_z_reward
             info["left_z_r"] = left_z_reward
             info["right_z_r"] = right_z_reward
@@ -930,7 +917,7 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
             right_gripper_qpos = current_qpos[13]
             gripper_state_reward = 0.0
             # Phase 1: Encourage OPEN grippers when approaching
-            if left_over_socket_dist > 0.03 or left_gripper_z_dist > 0.01:  # 0.01 = z-tolerance for successful grasp
+            if left_over_socket_dist > 0.05 or left_gripper_z_dist > 0.01:  # 0.01 = z-tolerance for successful grasp
                 left_open_reward = 0.5 * np.tanh(2 * (left_gripper_qpos - 0.1))  # 0.1 is fully closed
                 gripper_state_reward += left_open_reward
                 info["left_open_r"] = left_open_reward
@@ -1032,12 +1019,12 @@ class InsertionRewardShapingWrapperV2(gym.Wrapper):
         # ---------------------------------------------------
         # NORMALIZATION
         # ---------------------------------------------------
+        info["dense_r"] = reward  # Log unnormalized dense reward
+
         if self.normalize_rewards:
-            max_reward = 52  # Approximate maximum
+            max_reward = 57.5  # Approximate maximum
             reward = reward / max_reward
             info["max_reward_estimate"] = max_reward
-
-        info["dense_r"] = reward
 
         return reward
 

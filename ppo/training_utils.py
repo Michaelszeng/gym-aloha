@@ -46,7 +46,7 @@ def get_training_args():
         "--n-steps",
         type=int,
         default=512,
-        help="Number of steps during each rollout phase",
+        help="Number of steps in each environment during each rollout phase, i.e. how much data to collect. Note that SB3 automatically breaks this into episodes based on the environment's max_episode_steps.",
     )
     parser.add_argument(
         "--batch-size",

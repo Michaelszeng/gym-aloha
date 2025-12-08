@@ -52,12 +52,12 @@ python ppo/train_ppo.py \
     --n-envs 256 \
     --n-steps 8192 \
     --batch-size 262144 \
-    --n-epochs 15 \
+    --n-epochs 5 \
     --learning-rate 3e-4 \
     --gamma 0.99 \
     --gae-lambda 0.95 \
     --clip-range 0.2 \
-    --ent-coef 0.01 \
+    --ent-coef 0.02 \
     --vf-coef 0.5 \
     --max-grad-norm 0.5 \
     --target-kl 0.01 \

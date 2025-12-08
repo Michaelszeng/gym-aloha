@@ -74,7 +74,7 @@ def train(args):
             entity=args.wandb_entity,
             name=run_name,
             config=vars(args),
-            sync_tensorboard=True,  # Sync tensorboard logs
+            # sync_tensorboard=True,  # Sync tensorboard logs
             monitor_gym=True,
         )
 
@@ -108,8 +108,8 @@ def train(args):
     )
     train_monitor_file = f"{monitor_folder}/train_monitor.csv"
     train_env = VecMonitor(train_env, filename=train_monitor_file, info_keywords=("dense_r", "is_success"))
-    train_env = VecNormalize(  # Normalise obs, keep rewards untouched
-        train_env, training=True, norm_obs=True, norm_reward=True, clip_obs=10.0
+    train_env = VecNormalize(
+        train_env, training=True, norm_obs=True, norm_reward=False, clip_obs=10.0
     )
 
     # Create separate evaluation environment (with reward shaping for interpretability)
