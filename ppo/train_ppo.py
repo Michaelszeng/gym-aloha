@@ -5,9 +5,9 @@ import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
-from action_wrappers import ClipActionWrapper, RateLimitActionWrapper, DeltaJointPositionWrapper
+from action_wrappers import ClipActionWrapper, DeltaJointPositionWrapper, RateLimitActionWrapper
 from model.feature_extractors import AlohaStateExtractor
-from rewards_wrappers import InsertionRewardShapingWrapperV2
+from rewards_wrappers import InsertionRewardShapingWrapperV3 as InsertionRewardShapingWrapper
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback, EvalCallback
 from stable_baselines3.common.env_util import make_vec_env
@@ -103,7 +103,7 @@ def train(args):
         n_envs=args.n_envs,
         seed=args.seed,
         vec_env_cls=SubprocVecEnv,
-        wrapper_class=partial(InsertionRewardShapingWrapperV2, gamma=0.99, max_episode_steps=MAX_EPISODE_STEPS),
+        wrapper_class=partial(InsertionRewardShapingWrapper, gamma=0.99, max_episode_steps=MAX_EPISODE_STEPS),
         monitor_dir=None,  # Disable automatic Monitor wrapping to avoid double-wrapping
     )
     train_monitor_file = f"{monitor_folder}/train_monitor.csv"
@@ -118,7 +118,7 @@ def train(args):
         n_envs=1,
         seed=args.seed + 1000,
         vec_env_cls=SubprocVecEnv,
-        wrapper_class=partial(InsertionRewardShapingWrapperV2, gamma=0.99, max_episode_steps=MAX_EPISODE_STEPS),
+        wrapper_class=partial(InsertionRewardShapingWrapper, gamma=0.99, max_episode_steps=MAX_EPISODE_STEPS),
         monitor_dir=None,  # Disable automatic Monitor wrapping to avoid double-wrapping
     )
     eval_monitor_file = f"{monitor_folder}/eval_monitor.csv"
