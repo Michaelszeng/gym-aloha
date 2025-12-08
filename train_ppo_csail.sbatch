@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=gym-aloha-ppo
-#SBATCH --account=csail                  # or your group account if different
+#SBATCH --account=locomotion
 #SBATCH --partition=tig                  # or e.g. drl-a6000, csail-shared-h200
 #SBATCH --qos=tig-main                   # or group-specific QoS
-#SBATCH --time=72:00:00                  # max runtime you actually need
+#SBATCH --time=72:00:00                  # max runtime
 #SBATCH --gpus=1                         # number of GPUs
 #SBATCH --cpus-per-task=16               # tune for vectorized envs
 #SBATCH --mem=64G                        # tune memory
