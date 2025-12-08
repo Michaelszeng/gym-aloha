@@ -7,8 +7,8 @@
 #SBATCH --gpus=1                         # number of GPUs
 #SBATCH --cpus-per-task=16               # tune for vectorized envs
 #SBATCH --mem=64G                        # tune memory
-#SBATCH --output=/nfs/YOUR_PATH/logs/ppo_insertion/slurm_%j.out
-#SBATCH --error=/nfs/YOUR_PATH/logs/ppo_insertion/slurm_%j.err
+#SBATCH --output=slurm_%j.out
+#SBATCH --error=slurm_%j.err
 #SBATCH --requeue                        # optional: restart if preempted
 
 # sbatch train_ppo_csail.sbatch
