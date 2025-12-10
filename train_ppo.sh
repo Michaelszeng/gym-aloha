@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Configure MuJoCo for headless rendering
+export MUJOCO_GL=egl
+
 # Resume from checkpoint (leave empty to start fresh)
 RESUME_FROM=""  # e.g., "logs/ppo_insertion/PPO_2/checkpoints/ppo_aloha_10000000_steps.zip"
 

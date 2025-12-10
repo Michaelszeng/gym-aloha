@@ -25,6 +25,23 @@ $Env:DISPLAY = "localhost:0.0"
 ssh -Y -C michzeng-desktop
 ```
 
+Installing on CSAIL Cluster:
+
+- Clone this repository in your persistent storage location (i.e. `/data/scratch/<username>`)
+```bash
+python -m venv env --without-pip
+curl -sS https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+python /tmp/get-pip.py --no-warn-script-location
+```
+- Check that `python -m pip -V` shows a pip installation in `/data/scratch/<username>/gym-aloha/env/...`
+- From now on, ensure you use `python -m pip` instead of `pip` to use the installation in persistent storage rather than AFS
+```bash
+python -m pi install -r requirements.txt
+python -m pi install -e .  # pip install modifiable gym-aloha
+read -s WANDB_API_KEY   # paste key, press enter (silent)
+export WANDB_API_KEY  
+```
+
 
 ## Quickstart
 

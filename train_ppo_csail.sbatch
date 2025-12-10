@@ -13,6 +13,9 @@
 
 # sbatch train_ppo_csail.sbatch
 
+# For interactive run:
+# srun --account=locomotion --partition=csail-shared-h200 --qos=shared-if-available --time=5:00 --cpus-per-task=16 --gpus=1 --mem=64G export MUJOCO_GL=egl && python ppo/train_ppo.py --total-timesteps 100000000 --n-envs 256 --n-steps 8192 --batch-size 262144 --n-epochs 5 --learning-rate 3e-4 --gamma 0.99 --gae-lambda 0.95 --clip-range 0.2 --ent-coef 0.02 --vf-coef 0.5 --max-grad-norm 0.5 --target-kl 0.01 --log-dir "logs/ppo_insertion" --checkpoint-freq 100000 --eval-freq 50000 --device auto --use-wandb --wandb-project "gym-aloha-insertion-ppo" --wandb-entity ""
+
 # Load cluster-wide environment
 source /etc/profile
 
@@ -30,9 +33,6 @@ export TF_CPP_MIN_LOG_LEVEL=3
 export PYTHONWARNINGS="ignore::FutureWarning"
 export XLA_FLAGS="--xla_gpu_cuda_data_dir=/usr/local/cuda"
 export MUJOCO_GL=egl
-
-# Move to project directory on NFS
-cd /nfs/YOUR_PATH/gym-aloha
 
 # Resume from checkpoint (leave empty to start fresh)
 RESUME_FROM=""  # e.g. "logs/ppo_insertion/PPO_2/checkpoints/ppo_aloha_10000000_steps.zip"
