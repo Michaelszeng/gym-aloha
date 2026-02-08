@@ -10,7 +10,7 @@ A gym environment for ALOHA
 Create a virtual environment:
 ```bash
 python -m venv env
-souce env/bin/activate
+source env/bin/activate
 ```
 
 Install requirements:
